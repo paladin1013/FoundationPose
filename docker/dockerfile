@@ -1,11 +1,15 @@
 FROM nvidia/cudagl:11.3.0-devel-ubuntu20.04
+ARG DEBIAN_FRONTEND=noninteractive
 
 ENV TZ=US/Pacific
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
 RUN apt-get update --fix-missing && \
     apt-get install -y libgtk2.0-dev && \
-    apt-get install -y wget bzip2 ca-certificates curl git vim tmux g++ gcc build-essential cmake checkinstall gfortran libjpeg8-dev libtiff5-dev pkg-config yasm libavcodec-dev libavformat-dev libswscale-dev libdc1394-22-dev libxine2-dev libv4l-dev qt5-default libgtk2.0-dev libtbb-dev libatlas-base-dev libfaac-dev libmp3lame-dev libtheora-dev libvorbis-dev libxvidcore-dev libopencore-amrnb-dev libopencore-amrwb-dev x264 v4l-utils libprotobuf-dev protobuf-compiler libgoogle-glog-dev libgflags-dev libgphoto2-dev libhdf5-dev doxygen libflann-dev libboost-all-dev proj-data libproj-dev libyaml-cpp-dev cmake-curses-gui libzmq3-dev freeglut3-dev
+    apt-get install -y wget bzip2 ca-certificates curl git vim tmux g++ gcc build-essential cmake checkinstall gfortran libjpeg8-dev libtiff5-dev pkg-config yasm libavcodec-dev libavformat-dev libswscale-dev libdc1394-22-dev libxine2-dev libv4l-dev qt5-default libgtk2.0-dev libtbb-dev libatlas-base-dev libfaac-dev libmp3lame-dev libtheora-dev libvorbis-dev libxvidcore-dev libopencore-amrnb-dev libopencore-amrwb-dev x264 v4l-utils libprotobuf-dev protobuf-compiler libgoogle-glog-dev libgflags-dev libgphoto2-dev libhdf5-dev doxygen libflann-dev libboost-all-dev proj-data libproj-dev libyaml-cpp-dev cmake-curses-gui libzmq3-dev freeglut3-dev && \
+    apt-get install -y git zsh curl git vim net-tools wget htop x11-apps neofetch sudo
+
+
 
 
 RUN cd / && git clone https://github.com/pybind/pybind11 &&\
@@ -24,37 +28,95 @@ RUN cd / && wget https://gitlab.com/libeigen/eigen/-/archive/3.4.0/eigen-3.4.0.t
 
 SHELL ["/bin/bash", "--login", "-c"]
 
-RUN cd / && wget --quiet https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O /miniconda.sh && \
-    /bin/bash /miniconda.sh -b -p /opt/conda &&\
-    ln -s /opt/conda/etc/profile.d/conda.sh /etc/profile.d/conda.sh &&\
-    echo ". /opt/conda/etc/profile.d/conda.sh" >> ~/.bashrc &&\
-    /bin/bash -c "source ~/.bashrc" && \
-    /opt/conda/bin/conda update -n base -c defaults conda -y &&\
-    /opt/conda/bin/conda create -n my python=3.8
+
+ARG USERNAME
+ARG USER_UID
+ARG USER_GID
+
+RUN groupadd -g ${USER_GID} ${USERNAME} && \
+    useradd ${USERNAME}  -u ${USER_UID} -g ${USER_GID} -m -p "$(openssl passwd -1 ${USERNAME})"
+RUN usermod -aG sudo ${USERNAME}
+# Give ownership of the user's home directory to the new user
+RUN chown -R ${USERNAME}:${USERNAME} /home/${USERNAME}
 
 
-ENV PATH $PATH:/opt/conda/envs/my/bin
 
-RUN conda init bash &&\
-    echo "conda activate my" >> ~/.bashrc &&\
-    conda activate my &&\
-    pip install torch==2.0.0+cu118 torchvision==0.15.1+cu118 torchaudio==2.0.1 --index-url https://download.pytorch.org/whl/cu118 &&\
-    pip install "git+https://github.com/facebookresearch/pytorch3d.git@stable" &&\
-    pip install scipy joblib scikit-learn ruamel.yaml trimesh pyyaml opencv-python imageio open3d transformations warp-lang einops kornia pyrender
+USER ${USERNAME}
+ARG HOME=/home/${USERNAME}
+WORKDIR ${HOME}
 
-RUN cd / && git clone --recursive https://github.com/NVIDIAGameWorks/kaolin
-RUN conda activate my && cd /kaolin &&\
-    FORCE_CUDA=1 python setup.py develop
 
-RUN cd / && git clone https://github.com/NVlabs/nvdiffrast &&\
-    conda activate my && cd /nvdiffrast && pip install .
+RUN sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"
+
+RUN git clone https://github.com/marlonrichert/zsh-autocomplete.git \
+    ${ZSH_CUSTOM:-/home/${USERNAME}/.oh-my-zsh/custom}/plugins/zsh-autocomplete && \
+    git clone https://github.com/zsh-users/zsh-autosuggestions \
+    ${ZSH_CUSTOM:-/home/${USERNAME}/.oh-my-zsh/custom}/plugins/zsh-autosuggestions && \
+    git clone https://github.com/zsh-users/zsh-syntax-highlighting.git \
+    ${ZSH_CUSTOM:-/home/${USERNAME}/.oh-my-zsh/custom}/plugins/zsh-syntax-highlighting && \
+    git clone --depth=1 https://github.com/romkatv/powerlevel10k.git \
+    ${ZSH_CUSTOM:-/home/${USERNAME}/.oh-my-zsh/custom}/themes/powerlevel10k
+
+RUN mv ${HOME}/.zshrc ${HOME}/.zshrc.bak && \
+    echo 'export ZSH="$HOME/.oh-my-zsh"\nplugins=(\n  git\n  zsh-autosuggestions\n  zsh-autocomplete\n  zsh-syntax-highlighting\n  themes\n)\n' >> ${HOME}/.zshrc && \
+    echo 'ZSH_THEME="eastwood"\nsource $ZSH/oh-my-zsh.sh' >> ${HOME}/.zshrc && \
+    echo 'bindkey -M menuselect "\\r" .accept-line' >> ${HOME}/.zshrc && \
+    echo 'bindkey -M menuselect -s "^R" "^_^_^R" "^S" "^_^_^S"' >> ${HOME}/.zshrc && \
+    echo 'bindkey -M menuselect "\\e[D" .backward-char "\\eOD" .backward-char "\\e[C" .forward-char "\\eOC" .forward-char' >> ${HOME}/.zshrc && \
+    echo 'bindkey '^H' backward-kill-word' >> ${HOME}/.zshrc
+
+
+RUN ARCH=$(uname -m) && SYS=$(uname -s) && \
+    wget https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-${SYS}-${ARCH}.sh && \
+    bash Miniforge3-${SYS}-${ARCH}.sh -b -p ${HOME}/miniforge3 && \
+    rm Miniforge3-${SYS}-${ARCH}.sh && \
+    ${HOME}/miniforge3/bin/conda init zsh && \
+    ${HOME}/miniforge3/bin/conda init bash && \
+    ${HOME}/miniforge3/bin/mamba init zsh && \
+    ${HOME}/miniforge3/bin/mamba init bash
+
+
+# pre-install vscode server and helpful plugins
+RUN git clone https://gist.github.com/0a16b6645ab7921b0910603dfb85e4fb.git /home/${USERNAME}/vscode-install && \
+    chmod +x /home/${USERNAME}/vscode-install/download-vs-code-server.sh && \
+    /home/${USERNAME}/vscode-install/download-vs-code-server.sh linux
+ENV PATH=/home/${USERNAME}/.vscode-server/bin/default_version/bin:$PATH
+RUN code-server --install-extension ms-python.python && \
+    code-server --install-extension mhutchie.git-graph && \
+    code-server --install-extension eamodio.gitlens && \
+    code-server --install-extension github.copilot && \
+    code-server --install-extension kevinrose.vsc-python-indent && \
+    code-server --install-extension streetsidesoftware.code-spell-checker && \
+    code-server --install-extension ms-python.black-formatter
+
+# Enable using `code` command in terminal to open file or attach new window to a folder
+RUN echo "export PATH=/home/${USERNAME}/.vscode-server/bin/default_version/bin/remote-cli:\$PATH" >> /home/${USERNAME}/.zshrc
+
+RUN ${HOME}/miniforge3/bin/mamba update -n base -c defaults conda -y &&\
+    ${HOME}/miniforge3/bin/mamba create -y -n foundation-pose python=3.8 && \
+    ${HOME}/miniforge3/envs/foundation-pose/bin/pip install torch==2.0.0+cu118 torchvision==0.15.1+cu118 torchaudio==2.0.1 --index-url https://download.pytorch.org/whl/cu118 &&\
+    ${HOME}/miniforge3/envs/foundation-pose/bin/pip install "git+https://github.com/facebookresearch/pytorch3d.git@stable" &&\
+    ${HOME}/miniforge3/envs/foundation-pose/bin/pip install scipy joblib scikit-learn ruamel.yaml trimesh pyyaml opencv-python imageio open3d transformations warp-lang einops kornia pyrender
+
+RUN git clone --recursive https://github.com/NVIDIAGameWorks/kaolin
+RUN cd kaolin &&\
+    FORCE_CUDA=1 ${HOME}/miniforge3/envs/foundation-pose/bin/python setup.py develop
+
+RUN git clone https://github.com/NVlabs/nvdiffrast &&\
+    cd nvdiffrast && ${HOME}/miniforge3/envs/foundation-pose/bin/pip install .
 
 ENV OPENCV_IO_ENABLE_OPENEXR=1
 
-RUN conda activate my &&\
-    pip install scikit-image meshcat webdataset omegaconf pypng roma seaborn opencv-contrib-python openpyxl wandb imgaug Ninja xlsxwriter timm albumentations xatlas rtree nodejs jupyterlab objaverse g4f ultralytics==8.0.120 pycocotools videoio numba &&\
-    conda install -y -c anaconda h5py
+RUN ${HOME}/miniforge3/envs/foundation-pose/bin/pip  install scikit-image meshcat webdataset omegaconf pypng roma seaborn opencv-contrib-python openpyxl wandb imgaug Ninja xlsxwriter timm albumentations xatlas rtree nodejs jupyterlab objaverse g4f ultralytics==8.0.120 pycocotools videoio numba &&\
+    ${HOME}/miniforge3/bin/mamba install -n foundation-pose -y -c anaconda h5py
+
+RUN sed -i "s/\\\\\\\\/\\\\/g" /home/${USERNAME}/.zshrc && \
+    sed -i "s/\\\\n/\\n/g" /home/${USERNAME}/.zshrc
 
 
-ENV SHELL=/bin/bash
-RUN ln -sf /bin/bash /bin/sh
+
+# ENV SHELL=/bin/bash
+# RUN ln -sf /bin/bash /bin/sh
+
+SHELL ["/bin/zsh", "-ec"]
+CMD ["zsh"]

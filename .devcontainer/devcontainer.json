@@ -1,0 +1,34 @@
+{
+    "name": "example-devcontainer",
+    "dockerFile": "${localWorkspaceFolder}/docker/dockerfile",
+    "build": {
+      "args": {
+        "USERNAME": "purse",
+        "USER_UID": "1004", // Please check your user id using `id -u` in your host machine
+        "USER_GID": "1004", // Please check your group id using `id -g` in your host machine
+      },
+    },
+    "runArgs": [
+      "--network=host",
+      // "-p",
+      // "8081:8081/udp", // Example for forwarding port
+      "--volume=/tmp/.X11-unix/:/tmp/.X11-unix/", // For GUI display
+    //   "--runtime=nvidia", // For Jetson devices
+        // "--gpus all", // For GPU devices
+        "--gpus=all",
+        // "--runtime=nvidia",
+        "--privileged"
+    ],
+    "remoteEnv": {
+      "DISPLAY": "${localEnv:DISPLAY}"
+      // If you are using MacOS, please first check the correct display using `ps aux | grep Xquartz`
+      // The port (currently 40, may vary) comes from the line `/opt/X11/bin/Xquartz :40 -listen tcp`
+      // If getting `Authorization required, but no authorization protocol specified` error, please run `xhost +` in your host machine
+      // "DISPLAY": "host.docker.internal:0"
+    },
+    "workspaceMount": "source=${localWorkspaceFolder},target=/home/purse/${localWorkspaceFolderBasename},type=bind",
+    "workspaceFolder": "/home/purse/${localWorkspaceFolderBasename}", // Only for aliengo development
+    "mounts": [
+      "source=${localEnv:HOME}${localEnv:USERPROFILE}/.zsh_history,target=/home/purse/.zsh_history,type=bind",
+    ],
+  }
