@@ -136,7 +136,8 @@ def run_pose_estimation():
 if __name__=='__main__':
   parser = argparse.ArgumentParser()
   code_dir = os.path.dirname(os.path.realpath(__file__))
-  parser.add_argument('--linemod_dir', type=str, default="/mnt/9a72c439-d0a7-45e8-8d20-d7a235d02763/DATASET/LINEMOD", help="linemod root dir")
+  print(code_dir)
+  parser.add_argument('--linemod_dir', type=str, default=f'{code_dir}/dataset', help="linemod root dir")
   parser.add_argument('--use_reconstructed_mesh', type=int, default=0)
   parser.add_argument('--ref_view_dir', type=str, default="/mnt/9a72c439-d0a7-45e8-8d20-d7a235d02763/DATASET/YCB_Video/bowen_addon/ref_views_16")
   parser.add_argument('--debug', type=int, default=0)
