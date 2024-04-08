@@ -122,7 +122,7 @@ class ConfromalPredictor:
         pred_scores: cp.ndarray,  # (M, )
     ) -> cp.ndarray:  # output: (K, )
 
-        raise NotImplementedError
+        raise NotImplementedError("nonconformity_func is not initialized")
 
     def calibrate(self, epsilon: float):
         nonconformity_scores = np.zeros(self.calibration_set.size)
