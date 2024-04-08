@@ -3,73 +3,164 @@ from typing import Dict, List, Tuple
 import numpy as np
 import numpy.typing as npt
 import cupy as cp
+from gpu_utils import get_rot_diff, sample_convex_combination
+
 
 @dataclass
 class Dataset:
-    data_ids: npt.NDArray[np.int_] # (N, )
-    gt_poses: npt.NDArray[np.float32] # (N, 4, 4)
-    pred_poses: npt.NDArray[np.float32] # (N, M, 4, 4)
-    pred_scores: npt.NDArray[np.float32] # (N, M)
-    object_ids: npt.NDArray[np.int_] # (N, )
+    data_ids: npt.NDArray[np.int_]  # (N, )
+    gt_poses: npt.NDArray[np.float32]  # (N, 4, 4)
+    pred_poses: npt.NDArray[np.float32]  # (N, M, 4, 4)
+    pred_scores: npt.NDArray[np.float32]  # (N, M)
+    object_ids: npt.NDArray[np.int_]  # (N, )
     size: int
+
 
 class NonconformityFunc:
     @staticmethod
     def max_R(
-        center_poses: cp.ndarray,
-        pred_poses: cp.ndarray,
-        pred_scores: cp.ndarray,
+        center_poses: cp.ndarray,  # (K, 4, 4)
+        pred_poses: cp.ndarray,  # (M, 4, 4)
+        pred_scores: cp.ndarray,  # (M, )
     ) -> cp.ndarray:
-        
-        assert center_poses.shape[0] == 4 & center_poses.shape[1] == 4
+
+        assert center_poses.shape[1] == 4 & center_poses.shape[2] == 4
         assert pred_poses.shape[1] == 4 & pred_poses.shape[2] == 4
         assert pred_poses.shape[0] == pred_scores.shape[0]
-        
-        gt_R = center_poses[:3, :3]
-        gt_t = center_poses[:3, 3]
-        
-        pred_prob = pred_scores/np.sum(pred_scores)
-        pred_R = pred_poses[:,:3,:3]  
-        pred_t = pred_poses[:,:3,3]
-        
-        R_diff = np.linalg.norm(gt_R - pred_R, axis=(1,2))
-        t_diff = np.linalg.norm(gt_t - pred_t, axis=1)
-        
-        nonconformity = max(R_diff*pred_prob)
-        
+
+        gt_R = center_poses[:, :3, :3]  # (K, 3, 3)
+        # gt_t = center_poses[:,:3, 3]
+
+        pred_prob = pred_scores / cp.sum(pred_scores)  # (M, )
+        pred_R = pred_poses[:, :3, :3]  # (M, 3, 3)
+        # pred_t = pred_poses[:,:3,3]
+
+        R_diff = get_rot_diff(
+            cp.repeat(gt_R[:, None, :, :], pred_R.shape[0], axis=1),
+            cp.repeat(pred_R[None, :, :, :], gt_R.shape[0], axis=0),
+        )  # (K, M)
+        # t_diff = cp.linalg.norm(gt_t - pred_t, axis=1)
+
+        nonconformity = cp.amax(R_diff * pred_prob[None, :], axis=1)  # (K, )
+
         return nonconformity
 
     @staticmethod
     def mean_R(
-        center_poses: cp.ndarray,
-        pred_poses: cp.ndarray,
-        pred_scores: cp.ndarray,
-    ) -> cp.ndarray:...
+        center_poses: cp.ndarray,  # (K, 4, 4)
+        pred_poses: cp.ndarray,  # (M, 4, 4)
+        pred_scores: cp.ndarray,  # (M, )
+    ) -> cp.ndarray:
+
+        assert center_poses.shape[1] == 4 & center_poses.shape[2] == 4
+        assert pred_poses.shape[1] == 4 & pred_poses.shape[2] == 4
+        assert pred_poses.shape[0] == pred_scores.shape[0]
+
+        gt_R = center_poses[:, :3, :3]  # (K, 3, 3)
+        # gt_t = center_poses[:,:3, 3]
+
+        pred_prob = pred_scores / cp.sum(pred_scores)  # (M, )
+        pred_R = pred_poses[:, :3, :3]  # (M, 3, 3)
+        # pred_t = pred_poses[:,:3,3]
+
+        R_diff = get_rot_diff(
+            cp.repeat(gt_R[:, None, :, :], pred_R.shape[0], axis=1),
+            cp.repeat(pred_R[None, :, :, :], gt_R.shape[0], axis=0),
+        )  # (K, M)
+        # t_diff = cp.linalg.norm(gt_t - pred_t, axis=1)
+
+        nonconformity = cp.sum(R_diff * pred_prob[None, :], axis=1)  # (K, )
+
+        return nonconformity
 
     @staticmethod
     def normalized_max_R(
-        center_poses: cp.ndarray,
-        pred_poses: cp.ndarray,
-        pred_scores: cp.ndarray,
-    ) -> cp.ndarray:...
+        center_poses: cp.ndarray,  # (K, 4, 4)
+        pred_poses: cp.ndarray,  # (M, 4, 4)
+        pred_scores: cp.ndarray,  # (M, )
+    ) -> cp.ndarray:
+
+        assert center_poses.shape[1] == 4 & center_poses.shape[2] == 4
+        assert pred_poses.shape[1] == 4 & pred_poses.shape[2] == 4
+        assert pred_poses.shape[0] == pred_scores.shape[0]
+
+        gt_R = center_poses[:, :3, :3]  # (K, 3, 3)
+        # gt_t = center_poses[:,:3, 3]
+
+        pred_prob = pred_scores / cp.sum(pred_scores)  # (M, )
+        pred_R = pred_poses[:, :3, :3]  # (M, 3, 3)
+        # pred_t = pred_poses[:,:3,3]
+
+        R_diff = cp.linalg.norm(
+            gt_R[:, None, :, :] - pred_R[None, :, :, :], axis=(2, 3)
+        )  # (K, M)
+        # t_diff = cp.linalg.norm(gt_t - pred_t, axis=1)
+
+        # Calculate the pairwise difference:
+        pred_R_differences = pred_R[:, None, :, :] - pred_R[None, :, :, :]
+        all_R_diffs = cp.linalg.norm(pred_R_differences, axis=(2, 3))
+        mean_R_diffs = cp.mean(all_R_diffs)
+
+        nonconformity = (
+            cp.amax(R_diff * pred_prob[None, :], axis=1) / mean_R_diffs
+        )  # (K, )
+
+        return nonconformity
 
     @staticmethod
     def normalized_mean_R(
-        center_poses: cp.ndarray,
-        pred_poses: cp.ndarray,
-        pred_scores: cp.ndarray,
-    ) -> cp.ndarray:...
+        center_poses: cp.ndarray,  # (K, 4, 4)
+        pred_poses: cp.ndarray,  # (M, 4, 4)
+        pred_scores: cp.ndarray,  # (M, )
+    ) -> cp.ndarray:
+        assert center_poses.shape[1] == 4 & center_poses.shape[2] == 4
+        assert pred_poses.shape[1] == 4 & pred_poses.shape[2] == 4
+        assert pred_poses.shape[0] == pred_scores.shape[0]
+
+        gt_R = center_poses[:, :3, :3]  # (K, 3, 3)
+        # gt_t = center_poses[:,:3, 3]
+
+        pred_prob = pred_scores / cp.sum(pred_scores)  # (M, )
+        pred_R = pred_poses[:, :3, :3]  # (M, 3, 3)
+        # pred_t = pred_poses[:,:3,3]
+
+        R_diff = cp.linalg.norm(
+            gt_R[:, None, :, :] - pred_R[None, :, :, :], axis=(2, 3)
+        )  # (K, M)
+        # t_diff = cp.linalg.norm(gt_t - pred_t, axis=1)
+
+        # Calculate the pairwise difference:
+        pred_R_differences = pred_R[:, None, :, :] - pred_R[None, :, :, :]
+        all_R_diffs = cp.linalg.norm(pred_R_differences, axis=(2, 3))
+        mean_R_diffs = cp.mean(all_R_diffs)
+
+        nonconformity = (
+            cp.sum(R_diff * pred_prob[None, :], axis=1) / mean_R_diffs
+        )  # (K, )
+
+        return nonconformity
 
 
 class ConfromalPredictor:
-    def __init__(self, nonconformity_func_name: str, top_hypotheses_num: int = 10):
+    def __init__(
+        self,
+        nonconformity_func_name: str,
+        top_hypotheses_num: int = 10,
+        seed=0,
+        init_sample_num=1000,
+    ):
+        # dataset to be initialized in load_dataset
         self.dataset: Dataset
         self.calibration_set: Dataset
         self.test_set: Dataset
+
         assert nonconformity_func_name in NonconformityFunc.__dict__.keys()
         self.nonconformity_func = getattr(NonconformityFunc, nonconformity_func_name)
         self.top_hypotheses_num = top_hypotheses_num
+        self.seed = 0
+        np.random.seed(seed)
 
+        self.init_sample_num = init_sample_num
 
     def load_dataset(
         self,
@@ -84,10 +175,10 @@ class ConfromalPredictor:
             data["gt_poses"] = np.load(f"{data_dir}/{dataset_name}_gt_poses_{id}.npy")
             data["pred_poses"] = np.load(
                 f"{data_dir}/{dataset_name}_out_poses_{id}.npy"
-            )[:, :self.top_hypotheses_num]
+            )[:, : self.top_hypotheses_num]
             data["pred_scores"] = np.load(
                 f"{data_dir}/{dataset_name}_out_scores_{id}.npy"
-            )[:, :self.top_hypotheses_num]
+            )[:, : self.top_hypotheses_num]
             raw_dataset[id] = data
 
         self.data_size = sum(
@@ -108,7 +199,7 @@ class ConfromalPredictor:
                     for id in object_ids
                 ]
             ),
-            size = self.data_size,
+            size=self.data_size,
         )
 
         calibration_ids = np.random.choice(
@@ -120,7 +211,7 @@ class ConfromalPredictor:
             pred_poses=self.dataset.pred_poses[calibration_ids],
             pred_scores=self.dataset.pred_scores[calibration_ids],
             object_ids=self.dataset.object_ids[calibration_ids],
-            size = calibration_set_size,
+            size=calibration_set_size,
         )
 
         test_ids = np.array(
@@ -132,41 +223,71 @@ class ConfromalPredictor:
             pred_poses=self.dataset.pred_poses[test_ids],
             pred_scores=self.dataset.pred_scores[test_ids],
             object_ids=self.dataset.object_ids[test_ids],
-            size = self.data_size - calibration_set_size,
+            size=self.data_size - calibration_set_size,
         )
 
     def nonconformity_func(
         self,
-        center_poses: cp.ndarray, # (K, 4, 4)
-        pred_poses: cp.ndarray, # (M, 4, 4)
-        pred_scores: cp.ndarray, # (M, )
-    ) -> cp.ndarray: ...
-    """
-    output: (K, )
-    """
+        center_poses: cp.ndarray,  # (K, 4, 4)
+        pred_poses: cp.ndarray,  # (M, 4, 4)
+        pred_scores: cp.ndarray,  # (M, )
+    ) -> cp.ndarray:  # output: (K, )
+
+        raise NotImplementedError
 
     def calibrate(self, epsilon: float):
         nonconformity_scores = np.zeros(self.calibration_set.size)
         for k in range(self.calibration_set.size):
-            nonconformity_scores[k] = cp.asnumpy(self.nonconformity_func(
-                cp.array(self.calibration_set.gt_poses[k][None, :, :]),
-                cp.array(self.calibration_set.pred_poses[k]),
-                cp.array(self.calibration_set.pred_scores[k]),
-            ))[0]
-
+            nonconformity_scores[k] = cp.asnumpy(
+                self.nonconformity_func(
+                    cp.array(self.calibration_set.gt_poses[k][None, :, :]),
+                    cp.array(self.calibration_set.pred_poses[k]),
+                    cp.array(self.calibration_set.pred_scores[k]),
+                )
+            )[0]
+        print(f"{self.calibration_set.size=}")
         nonconformity_threshold = np.quantile(nonconformity_scores, 1 - epsilon)
 
         return nonconformity_threshold
 
     def predict(
         self,
-        pred_poses: npt.NDArray[np.float32], # (N, M, 4, 4)
-        pred_scores: npt.NDArray[np.float32], # (N, M)
+        pred_poses: npt.NDArray[np.float32],  # (M, 4, 4)
+        pred_scores: npt.NDArray[np.float32],  # (M)
         nonconformity_threshold: float,
-    ) -> Tuple[npt.NDArray[np.float32], npt.NDArray[np.float64], npt.NDArray[np.float64]]: ...
-    """
-    Return: 
-        - minimax_center_poses: (N, 4, 4)
-        - max_rotation_errors: (N, )
-        - max_translation_errors: (N, )
-    """
+    ) -> Tuple[npt.NDArray[np.float32], float, float]:
+        """
+        Return:
+            - minimax_center_pose: (4, 4)
+            - max_rotation_error: float
+            - max_translation_error: float
+        """
+
+        # First do sampling in the sets
+
+        center_poses = sample_convex_combination(
+            cp.array(pred_poses), self.init_sample_num
+        )  # (init_sample_num, 4, 4)
+        nonconformity_scores = self.nonconformity_func(
+            center_poses, pred_poses, pred_scores
+        )
+        valid_center_poses = center_poses[
+            nonconformity_scores < nonconformity_threshold
+        ]
+
+        # Then do the rigid sim algorithms
+
+        # Finally get the minimax_center_poses, max_rotation_errors, max_translation_errors
+        minimax_center_poses = np.zeros((4, 4), dtype=np.float32)
+        max_rotation_error = 0
+        max_translation_error = 0
+        return minimax_center_poses, max_rotation_error, max_translation_error
+
+
+if __name__ == "__main__":
+
+    conformal_predictor = ConfromalPredictor("mean_R", 10)
+    conformal_predictor.load_dataset("data", "linemod", [1, 2, 4, 5, 6, 8, 9], 200)
+    nonconformity_threshold = conformal_predictor.calibrate(0.1)
+
+    print(nonconformity_threshold)
