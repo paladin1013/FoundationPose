@@ -102,7 +102,7 @@ RUN ${HOME}/miniforge3/envs/foundation-pose/bin/pip install "git+https://github.
 
 RUN git clone --recursive https://github.com/NVIDIAGameWorks/kaolin
 RUN cd kaolin &&\
-    FORCE_CUDA=1 ${HOME}/miniforge3/envs/foundation-pose/bin/python setup.py develop && \
+#     FORCE_CUDA=1 ${HOME}/miniforge3/envs/foundation-pose/bin/python setup.py build_ext --parallel=127 develop && \
     ${HOME}/miniforge3/envs/foundation-pose/bin/pip install -e .
 
 RUN git clone https://github.com/NVlabs/nvdiffrast &&\

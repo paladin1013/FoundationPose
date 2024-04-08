@@ -17,7 +17,7 @@
         // "--gpus all", // For GPU devices
         "--gpus=all",
         // "--runtime=nvidia",
-        "--privileged"
+        // "--privileged"
     ],
     "remoteEnv": {
       "DISPLAY": "${localEnv:DISPLAY}"

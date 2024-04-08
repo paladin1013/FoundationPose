@@ -54,6 +54,9 @@ def run_pose_estimation_worker(reader, i_frames, est:FoundationPose=None, debug=
   est.glctx = dr.RasterizeCudaContext(device=device)
 
   result = NestDict()
+  all_score_result = NestDict()
+  all_pose_result = NestDict()
+  gt_poses = NestDict()
 
   for i, i_frame in enumerate(i_frames):
     logging.info(f"{i}/{len(i_frames)}, i_frame:{i_frame}, ob_id:{ob_id}")
@@ -73,7 +76,7 @@ def run_pose_estimation_worker(reader, i_frames, est:FoundationPose=None, debug=
 
     est.gt_pose = reader.get_gt_pose(i_frame, ob_id)
 
-    pose = est.register(K=reader.K, rgb=color, depth=depth, ob_mask=ob_mask, ob_id=ob_id)
+    pose,all_scores,all_poses = est.register(K=reader.K, rgb=color, depth=depth, ob_mask=ob_mask, ob_id=ob_id)
     logging.info(f"pose:\n{pose}")
 
     if debug>=3:
@@ -83,9 +86,12 @@ def run_pose_estimation_worker(reader, i_frames, est:FoundationPose=None, debug=
       tmp.export(f'{debug_dir}/model_tf.obj')
 
     result[video_id][id_str][ob_id] = pose
+    all_score_result[video_id][id_str][ob_id] = all_scores
+    all_pose_result[video_id][id_str][ob_id] = all_poses
+    gt_poses[video_id][id_str][ob_id] = est.gt_pose
 
-  return result
-
+  return result, all_scores, all_poses, est.gt_pose
+# all_score_result, all_pose_result, gt_poses
 
 def run_pose_estimation():
   wp.force_load(device='cuda')
@@ -96,13 +102,20 @@ def run_pose_estimation():
   debug_dir = opt.debug_dir
 
   res = NestDict()
+  res_scores = NestDict()
+  res_poses = NestDict()
+  res_gt_poses = NestDict()
   glctx = dr.RasterizeCudaContext()
   mesh_tmp = trimesh.primitives.Box(extents=np.ones((3)), transform=np.eye(4),mutable=True)
   mesh_tmp = mesh_tmp.to_mesh()
   est = FoundationPose(model_pts=mesh_tmp.vertices.copy(), model_normals=mesh_tmp.vertex_normals.copy(), symmetry_tfs=None, mesh=mesh_tmp, scorer=None, refiner=None, glctx=glctx, debug_dir=debug_dir, debug=debug)
 
+  final_keep_num = 50
+  # reader_tmp.ob_ids
   for ob_id in reader_tmp.ob_ids:
     ob_id = int(ob_id)
+    if ob_id==1:
+        continue
     if use_reconstructed_mesh:
       mesh = reader_tmp.get_reconstructed_mesh(ob_id, ref_view_dir=opt.ref_view_dir)
     else:
@@ -120,18 +133,96 @@ def run_pose_estimation():
       args.append((reader, [i], est, debug, ob_id, "cuda:0"))
 
     outs = []
-    for arg in args:
-      out = run_pose_estimation_worker(*arg)
+    out_scores = []
+    out_poses = []
+    gt_poses = []
+    
+    
+    saved_out_scores = np.empty((len(args),final_keep_num))
+    saved_out_poses = np.empty((len(args),final_keep_num,4,4))
+    saved_gt_poses = np.empty((len(args),4,4))
+    
+    for i in range(len(args)):
+      out,out_score,out_pose,gt_pose = run_pose_estimation_worker(*args[i])
+    #   this_score = out_score[1]['000000'][1]
+    #   this_pose = out_pose[1]['000000'][1]
+    #   this_gt_pose = gt_pose[1]['000000'][1]
+    #   print(this_score)
+    #   R = this_pose[:,:3,:3]
+    #   t = this_pose[:,:3,3]
+    #   R_err = np.linalg.norm(R - this_gt_pose[:3,:3],axis = (1,2))
+    #   t_err = np.linalg.norm(t - this_gt_pose[:3,3],axis = 1)
+    #   print(R_err)
+    #   print(t_err)
+      saved_out_scores[i,:] = out_score[:final_keep_num]
+      saved_out_poses[i,:,:,:] = out_pose[:final_keep_num,:,:]
+      saved_gt_poses[i,:,:] = gt_pose
+      
       outs.append(out)
+      out_scores.append(out_score)
+      out_poses.append(out_pose)
+      gt_poses.append(gt_pose)
+    
+    
+    np.save(f'./datas/linemod_out_scores_{ob_id}.npy',saved_out_scores)
+    np.save(f'./datas/linemod_out_poses_{ob_id}.npy',saved_out_poses)
+    np.save(f'./datas/linemod_gt_poses_{ob_id}.npy',saved_gt_poses)
 
-    for out in outs:
-      for video_id in out:
-        for id_str in out[video_id]:
-          for ob_id in out[video_id][id_str]:
-            res[video_id][id_str][ob_id] = out[video_id][id_str][ob_id]
+    # for out in outs:
+    #   for video_id in out:
+    #     for id_str in out[video_id]:
+    #       for ob_id in out[video_id][id_str]:
+    #         res[video_id][id_str][ob_id] = out[video_id][id_str][ob_id]
 
-  with open(f'{opt.debug_dir}/linemod_res.yml','w') as ff:
-    yaml.safe_dump(make_yaml_dumpable(res), ff)
+    # for out_score in out_scores:
+    #   for video_id in out_score:
+    #     for id_str in out_score[video_id]:
+    #       for ob_id in out_score[video_id][id_str]:
+    #         res_scores[video_id][id_str][ob_id] = out_score[video_id][id_str][ob_id]
+            
+    # for out_pose in out_poses:
+    #   for video_id in out_pose:
+    #     for id_str in out_pose[video_id]:
+    #       for ob_id in out_pose[video_id][id_str]:
+    #         res_poses[video_id][id_str][ob_id] = out_pose[video_id][id_str][ob_id]
+            
+    # for gt_pose in gt_poses:
+    #   for video_id in gt_pose:
+    #     for id_str in gt_pose[video_id]:
+    #       for ob_id in gt_pose[video_id][id_str]:
+    #         res_gt_poses[video_id][id_str][ob_id] = gt_pose[video_id][id_str][ob_id]
+  
+#   with open('./datas/linemod_res.yml','w') as ff:
+#     yaml.safe_dump(make_yaml_dumpable(res), ff)
+#   with open('./datas/linemod_res_scores.yml','w') as ff:
+#     yaml.safe_dump(make_yaml_dumpable(res_scores), ff)
+#   with open('./datas/linemod_res_poses.yml','w') as ff:
+#     yaml.safe_dump(make_yaml_dumpable(res_poses), ff)
+#   with open('./datas/linemod_res_gt_poses.yml','w') as ff:
+#     yaml.safe_dump(make_yaml_dumpable(res_gt_poses), ff)
+    # for i in range(len(out_scores)):
+    #   for video_id in out_scores[i]:
+    #     for id_str in out_scores[i][video_id]:
+    #       for ob_id in out_scores[i][video_id][id_str]:
+    #         this_scores = out_scores[i][video_id][id_str][ob_id]
+    #         this_poses = out_poses[i][video_id][id_str][ob_id]
+    #         this_gt_pose = gt_poses[i][video_id][id_str][ob_id]
+            
+    #         # R_diff = np.dot(this_pose[:3,:3], this_gt_pose[:3,:3].T)
+            
+    #         # best
+    #         indices = np.where(this_scores == this_scores[0])
+    #         best_poses = this_poses[indices]
+    #         best_R = best_poses[:,:3,:3]
+    #         best_t = best_poses[:,:3,3]
+            
+    #         best_R_err = np.linalg.norm(best_R - this_gt_pose[:3,:3],axis = (1,2))
+    #         best_t_err = np.linalg.norm(best_t - this_gt_pose[:3,3],axis = 1)
+            
+    #         # all
+    #         best_R = 0
+            
+            
 
 
 if __name__=='__main__':

@@ -13,7 +13,7 @@ import itertools
 from learning.training.predict_score import *
 from learning.training.predict_pose_refine import *
 import yaml
-
+import mycpp
 
 class FoundationPose:
   def __init__(self, model_pts, model_normals, symmetry_tfs=None, mesh=None, scorer:ScorePredictor=None, refiner:PoseRefinePredictor=None, glctx=None, debug=0, debug_dir='/home/bowen/debug/novel_pose_debug/'):
@@ -45,9 +45,19 @@ class FoundationPose:
     max_xyz = mesh.vertices.max(axis=0)
     min_xyz = mesh.vertices.min(axis=0)
     self.model_center = (min_xyz+max_xyz)/2
+    print(self.model_center)
     if mesh is not None:
       self.mesh_ori = mesh.copy()
       mesh = mesh.copy()
+    #   print(mesh.vertices)
+    #   my_trans_1 = np.hstack((np.eye(3), -self.model_center.reshape(3,1)))
+    #   print(my_trans_1)
+    #   my_trans_2 = np.array([0, 0, 0, 1])
+    #   print(np.vstack((my_trans_1,my_trans_2)))
+    #   mesh.transform = np.vstack((my_trans_1,my_trans_2))
+      
+    #   print(mesh.transform)
+    #   print(mesh.vertices)
       mesh.vertices = mesh.vertices - self.model_center.reshape(1,3)
 
     model_pts = mesh.vertices
@@ -237,7 +247,7 @@ class FoundationPose:
     self.poses = poses
     self.scores = scores
 
-    return best_pose.data.cpu().numpy()
+    return best_pose.data.cpu().numpy(), scores.data.cpu().numpy(), poses.data.cpu().numpy()
 
 
   def compute_add_err_to_gt_pose(self, poses):
