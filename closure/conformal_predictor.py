@@ -6,16 +6,17 @@ import cupy as cp
 from gpu_utils import sample_convex_combination
 import nonconformity_funcs as F
 
+
 @dataclass
 class Dataset:
     data_ids: npt.NDArray[np.int_]  # (N, )
-    gt_poses: npt.NDArray[np.float32]  # (N, 4, 4)
-    pred_poses: npt.NDArray[np.float32]  # (N, M, 4, 4)
+    gt_Rs: npt.NDArray[np.float32]  # (N, 3, 3)
+    gt_ts: npt.NDArray[np.float32]  # (N, 3)
+    pred_Rs: npt.NDArray[np.float32]  # (N, M, 3, 3)
+    pred_ts: npt.NDArray[np.float32]  # (N, M, 3)
     pred_scores: npt.NDArray[np.float32]  # (N, M)
     object_ids: npt.NDArray[np.int_]  # (N, )
     size: int
-
-
 
 
 class ConfromalPredictor:
@@ -62,12 +63,16 @@ class ConfromalPredictor:
         self.data_size = sum(
             [raw_dataset[id]["gt_poses"].shape[0] for id in object_ids]
         )
+        gt_poses = np.concatenate([raw_dataset[id]["gt_poses"] for id in object_ids])
+        pred_poses = np.concatenate(
+            [raw_dataset[id]["pred_poses"] for id in object_ids]
+        )
         self.dataset = Dataset(
             data_ids=np.arange(self.data_size),
-            gt_poses=np.concatenate([raw_dataset[id]["gt_poses"] for id in object_ids]),
-            pred_poses=np.concatenate(
-                [raw_dataset[id]["pred_poses"] for id in object_ids]
-            ),
+            gt_Rs=gt_poses[:, :3, :3],
+            gt_ts=gt_poses[:, :3, 3],
+            pred_Rs=pred_poses[:, :, :3, :3],
+            pred_ts=pred_poses[:, :, :3, 3],
             pred_scores=np.concatenate(
                 [raw_dataset[id]["pred_scores"] for id in object_ids]
             ),
@@ -85,8 +90,10 @@ class ConfromalPredictor:
         )
         self.calibration_set = Dataset(
             data_ids=calibration_ids,
-            gt_poses=self.dataset.gt_poses[calibration_ids],
-            pred_poses=self.dataset.pred_poses[calibration_ids],
+            gt_Rs=self.dataset.gt_Rs[calibration_ids],
+            gt_ts=self.dataset.gt_ts[calibration_ids],
+            pred_Rs=self.dataset.pred_Rs[calibration_ids],
+            pred_ts=self.dataset.pred_ts[calibration_ids],
             pred_scores=self.dataset.pred_scores[calibration_ids],
             object_ids=self.dataset.object_ids[calibration_ids],
             size=calibration_set_size,
@@ -97,8 +104,10 @@ class ConfromalPredictor:
         )
         self.test_set = Dataset(
             data_ids=test_ids,
-            gt_poses=self.dataset.gt_poses[test_ids],
-            pred_poses=self.dataset.pred_poses[test_ids],
+            gt_Rs=self.dataset.gt_Rs[test_ids],
+            gt_ts=self.dataset.gt_ts[test_ids],
+            pred_Rs=self.dataset.pred_Rs[test_ids],
+            pred_ts=self.dataset.pred_ts[test_ids],
             pred_scores=self.dataset.pred_scores[test_ids],
             object_ids=self.dataset.object_ids[test_ids],
             size=self.data_size - calibration_set_size,
@@ -106,8 +115,10 @@ class ConfromalPredictor:
 
     def nonconformity_func(
         self,
-        center_poses: cp.ndarray,  # (K, 4, 4)
-        pred_poses: cp.ndarray,  # (M, 4, 4)
+        center_Rs: cp.ndarray,  # (K, 3, 3)
+        center_ts: cp.ndarray,  # (K, 3)
+        pred_Rs: cp.ndarray,  # (M, 3, 3)
+        pred_ts: cp.ndarray,  # (M, 3)
         pred_scores: cp.ndarray,  # (M, )
     ) -> cp.ndarray:  # output: (K, )
 
@@ -118,8 +129,10 @@ class ConfromalPredictor:
         for k in range(self.calibration_set.size):
             nonconformity_scores[k] = cp.asnumpy(
                 self.nonconformity_func(
-                    cp.array(self.calibration_set.gt_poses[k][None, :, :]),
-                    cp.array(self.calibration_set.pred_poses[k]),
+                    cp.array(self.calibration_set.gt_Rs[k][None, :, :]),
+                    cp.array(self.calibration_set.gt_ts[k][None, :]),
+                    cp.array(self.calibration_set.pred_Rs[k]),
+                    cp.array(self.calibration_set.pred_ts[k]),
                     cp.array(self.calibration_set.pred_scores[k]),
                 )
             )[0]
@@ -127,24 +140,29 @@ class ConfromalPredictor:
 
         print(f"{self.calibration_set.size=}, {nonconformity_threshold=}")
         return nonconformity_threshold
-    
+
     def test_threshold(self, nonconformity_threshold: float):
         nonconformity_scores = np.zeros(self.test_set.size)
         for k in range(self.test_set.size):
             nonconformity_scores[k] = cp.asnumpy(
                 self.nonconformity_func(
-                    cp.array(self.test_set.gt_poses[k][None, :, :]),
-                    cp.array(self.test_set.pred_poses[k]),
+                    cp.array(self.test_set.gt_Rs[k][None, :, :]),
+                    cp.array(self.test_set.gt_ts[k][None, :]),
+                    cp.array(self.test_set.pred_Rs[k]),
+                    cp.array(self.test_set.pred_ts[k]),
                     cp.array(self.test_set.pred_scores[k]),
                 )
             )[0]
-        test_epsilon = np.sum(nonconformity_scores > nonconformity_threshold) / self.test_set.size
+        test_epsilon = (
+            np.sum(nonconformity_scores > nonconformity_threshold) / self.test_set.size
+        )
         print(f"{self.test_set.size=}, {test_epsilon=}")
         return test_epsilon
 
     def predict(
         self,
-        pred_poses: npt.NDArray[np.float32],  # (M, 4, 4)
+        pred_Rs: npt.NDArray[np.float32],  # (M, 3, 3)
+        pred_ts: npt.NDArray[np.float32],  # (M, 3)
         pred_scores: npt.NDArray[np.float32],  # (M)
         nonconformity_threshold: float,
     ) -> Tuple[npt.NDArray[np.float32], float, float]:
@@ -157,17 +175,16 @@ class ConfromalPredictor:
 
         # First do sampling in the sets
 
-        center_poses = sample_convex_combination(
-            cp.array(pred_poses), self.init_sample_num
+        center_Rs, center_ts = sample_convex_combination(
+            cp.array(pred_Rs), cp.array(pred_ts), self.init_sample_num
         )  # (init_sample_num, 4, 4)
         nonconformity_scores = self.nonconformity_func(
-            center_poses, pred_poses, pred_scores
+            center_Rs, center_ts, pred_Rs, pred_ts, pred_scores
         )
-        valid_center_poses = center_poses[
-            nonconformity_scores < nonconformity_threshold
-        ]
+        valid_center_Rs = center_Rs[nonconformity_scores < nonconformity_threshold]
+        valid_center_ts = center_ts[nonconformity_scores < nonconformity_threshold]
 
-        print(f"{valid_center_poses.shape=}")
+        print(f"{valid_center_Rs.shape=}, {valid_center_ts.shape=}")
 
         # Then do the rigid sim algorithms
 
@@ -180,9 +197,10 @@ class ConfromalPredictor:
 
 if __name__ == "__main__":
 
-    conformal_predictor = ConfromalPredictor(nonconformity_func_name="mean_R", top_hypotheses_num = 10, init_sample_num = 1000)
+    conformal_predictor = ConfromalPredictor(
+        nonconformity_func_name="normalized_mean_R", top_hypotheses_num=10, init_sample_num=1000
+    )
     conformal_predictor.load_dataset("data", "linemod", [1, 2, 4, 5, 6, 8, 9], 200)
     nonconformity_threshold = conformal_predictor.calibrate(0.1)
 
     test_epsilon = conformal_predictor.test_threshold(nonconformity_threshold)
-    

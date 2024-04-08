@@ -7,7 +7,7 @@ print("Start reading\n")
 #     # Load the YAML data
 #     all_scores = yaml.safe_load(f)
 # print("Score loaded")
-    
+
 # with open('../datas/linemod_res_poses.yml', 'r') as f:
 #     # Load the YAML data
 #     all_poses = yaml.safe_load(f)
@@ -47,9 +47,9 @@ print("Start reading\n")
 
 data_dir = "data"
 
-scores = np.load(f'{data_dir}/linemod_out_scores_1.npy')
-poses = np.load(f'{data_dir}/linemod_out_poses_1.npy')
-gt_poses = np.load(f'{data_dir}/linemod_gt_poses_1.npy')
+scores = np.load(f"{data_dir}/linemod_out_scores_1.npy")
+poses = np.load(f"{data_dir}/linemod_out_poses_1.npy")
+gt_poses = np.load(f"{data_dir}/linemod_gt_poses_1.npy")
 
 a = 1
 
@@ -57,4 +57,3 @@ a = 1
 print(f"{scores.shape=}")
 print(f"{poses.shape=}")
 print(f"{gt_poses.shape=}")
-

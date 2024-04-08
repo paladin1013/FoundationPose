@@ -24,7 +24,6 @@ class ClosureBase:
         assert init_Rs.shape[1:] == (3, 3), f"{init_Rs.shape=}"
         assert init_ts.shape[1:] == (3,), f"{init_ts.shape=}"
 
-
         self.n_iterations = n_iterations
         self.n_walks = n_walks
         cp.cuda.Device(device_id).use()
@@ -40,11 +39,10 @@ class ClosureBase:
         self.t_perturbation_scale = t_perturbation_scale
         self.n_perturbations = n_perturbations
 
-
         assert cp.all(
             self.check_final_poses(self.init_Rs, self.init_ts)
         ), "Initial poses does not satisfy PURSE constraints"
-        
+
     def check_final_poses(
         self,
         Rs: cp.ndarray,  # (N, 3, 3)
@@ -60,13 +58,13 @@ class ClosureBase:
         self,
         additional_Rs: cp.ndarray,  # (N, n_walks, 3, 3)
         additional_ts: cp.ndarray,  # (N, n_walks, 3)
-    ) -> cp.ndarray:    
+    ) -> cp.ndarray:
         """
         Return:
             inside: cp.ndarray[bool], (N, n_walks)
         """
         raise NotImplementedError
-    
+
     def get_rotation_movements(self) -> cp.ndarray:
         """
         Return:
@@ -74,7 +72,7 @@ class ClosureBase:
         """
 
         raise NotImplementedError
-    
+
     def get_translation_movements(self) -> cp.ndarray:
         """
         Return:
@@ -88,7 +86,7 @@ class ClosureBase:
             R_perturbations: cp.ndarray, (N, n_walks, n_perturbations, 3, 3)
         """
         raise NotImplementedError
-    
+
     def get_final_poses(
         self,
         additional_Rs: cp.ndarray,
@@ -103,17 +101,16 @@ class ClosureBase:
         raise NotImplementedError
 
     def get_minimum_residual(
-        self, 
+        self,
         additional_Rs: cp.ndarray,  # (N, n_walks, 3, 3)
         additional_ts: cp.ndarray,  # (N, n_walks, 3)
     ) -> Tuple[cp.ndarray, cp.ndarray]:
         """
         Return:
-            inside: cp.ndarray[bool], (N, n_walks)        
+            inside: cp.ndarray[bool], (N, n_walks)
             min_residual: cp.ndarray[float], (N, n_walks)
         """
         raise NotImplementedError
-
 
     def sample_rotation_boundary(self) -> Tuple[cp.ndarray, cp.ndarray]:
         """
@@ -122,7 +119,6 @@ class ClosureBase:
             successful_additional_ts: cp.ndarray, (N, n_walks, 3)
         """
         raise NotImplementedError
-        
 
     def sample_translation_boundary(self) -> Tuple[cp.ndarray, cp.ndarray]:
         """
@@ -132,10 +128,8 @@ class ClosureBase:
         """
         raise NotImplementedError
 
-
     def run_sampling(self):
 
-        
         additional_Rs_r, additional_ts_r = self.sample_rotation_boundary()
         additional_Rs_t, additional_ts_t = self.sample_translation_boundary()
         additional_Rs = cp.concatenate((additional_Rs_r, additional_Rs_t), axis=1)

@@ -1,6 +1,7 @@
 from re import U
 import cupy as cp
 
+
 def get_axis_angle(Rs: cp.ndarray):
     """Get the axis-angle representation of a rotation matrix"""
     assert Rs.shape[1:] == (3, 3)  # Rs: (N, 3, 3)
@@ -23,10 +24,8 @@ def get_axis_angle(Rs: cp.ndarray):
     axes[~close_to_0, :] = valid_axes
     return theta[:, None] * axes
 
-def get_rot_diff(
-        Rs1: cp.ndarray, 
-        Rs2: cp.ndarray
-    ):
+
+def get_rot_diff(Rs1: cp.ndarray, Rs2: cp.ndarray):
     """Get the rotation difference between two rotation matrices"""
     assert Rs1.shape == Rs2.shape  # Rs1, Rs2: (..., 3, 3)
     assert Rs1.shape[-2:] == (3, 3)
@@ -48,14 +47,14 @@ def project_to_SO3(Rs: cp.ndarray) -> cp.ndarray:
 
 
 def sample_convex_combination(
-    poses: cp.ndarray, # (N, 4, 4)
+    Rs: cp.ndarray,  # (N, 3, 3)
+    ts: cp.ndarray,  # (N, 3)
     num: int,
 ):
     """Sample a convex combination of the input rotations and translations"""
-    assert poses.shape[1:] == (4, 4)  # poses: (N, 4, 4)
+    assert Rs.shape[1:] == (3, 3)  # Rs: (N, 3, 3)
+    assert ts.shape[1:] == (3,)  # ts: (N, 3)
 
-    Rs = poses[:, :3, :3]  # (N, 3, 3)
-    ts = poses[:, :3, 3]  # (N, 3)
     N = Rs.shape[0]
     alphas = cp.random.rand(num, N)  # (num, N)
     alphas /= cp.sum(alphas, axis=0, keepdims=True)  # (num, N)
@@ -63,9 +62,8 @@ def sample_convex_combination(
     Rs = Rs[:, None, :, :]  # (N, 1, 3, 3)
     ts = ts[:, None, :]  # (N, 1, 3)
 
-    Rs = cp.sum(Rs * alphas[:, :, None, None], axis=1)  # (num, 3, 3)
-    Rs = project_to_SO3(Rs)
-    ts = cp.sum(ts * alphas[:, :, None], axis=1)  # (num, 3)
+    sampled_Rs = cp.sum(Rs * alphas[:, :, None, None], axis=1)  # (num, 3, 3)
+    sampled_Rs = project_to_SO3(sampled_Rs)
+    sampled_ts = cp.sum(ts * alphas[:, :, None], axis=1)  # (num, 3)
 
-    sampled_poses = cp.concatenate((Rs[:, :, :], ts[:, :, None]), axis=2)  # (num, 3, 4)
-    return sampled_poses # (num, 3, 3), (num, 3)
+    return sampled_Rs, sampled_ts  # (num, 3, 3), (num, 3)
