@@ -45,7 +45,7 @@ print("Start reading\n")
 
 # data_dir = "/home/purse/FoundationPose/datas"
 
-data_dir = "datas"
+data_dir = "data"
 
 scores = np.load(f'{data_dir}/linemod_out_scores_1.npy')
 poses = np.load(f'{data_dir}/linemod_out_poses_1.npy')
@@ -53,4 +53,8 @@ gt_poses = np.load(f'{data_dir}/linemod_gt_poses_1.npy')
 
 a = 1
 
-print(f"Done")
+# print(f"Done")
+print(f"{scores.shape=}")
+print(f"{poses.shape=}")
+print(f"{gt_poses.shape=}")
+
