@@ -8,7 +8,7 @@ import numpy as np
 import numpy.typing as npt
 import cupy as cp
 from closure.closure_foundation_pose import ClosureFoundationPose
-from gpu_utils import get_rotation_diff, sample_convex_combination
+from gpu_utils import get_rotation_dist, sample_convex_combination
 from closure.miniball import miniball, rotation_miniball
 import nonconformity_funcs as F
 
@@ -245,16 +245,29 @@ class ConfromalPredictor:
                 self.test_set.pred_scores[k],
                 nonocnformaty_threshold,
             )
-            minimax_center_err_R = get_rotation_diff(
+
+            minimax_center_err_R = get_rotation_dist(
                 cp.array(minimax_center_R), cp.array(self.test_set.gt_Rs[k])
             )
             minimax_center_err_t = np.linalg.norm(
                 minimax_center_t - self.test_set.gt_ts[k]
             )
-
+            data = {}
+            data["gt_Rs"] = self.test_set.gt_Rs[k]
+            data["gt_ts"] = self.test_set.gt_ts[k]
+            data["pred_Rs"] = self.test_set.pred_Rs[k]
+            data["pred_ts"] = self.test_set.pred_ts[k]
+            data["minimax_center_R"] = minimax_center_R
+            data["minimax_center_t"] = minimax_center_t
+            data["max_rotation_error"] = max_rotation_error
+            data["max_translation_error"] = max_translation_error
+            data["minimax_center_err_R"] = minimax_center_err_R
+            data["minimax_center_err_t"] = minimax_center_err_t
+            np.save(f"data/closure_test/test_result_{self.test_set.data_ids[k]}.npy", data, allow_pickle=True)
             print(
-                f"{self.test_set.object_ids[k]=}, {max_rotation_error=:.4f}, {max_translation_error=:.4f}, {minimax_center_err_R=:.4f}, {minimax_center_err_t=:.4f}"
+                f"{self.test_set.data_ids[k]=}, {max_rotation_error=:.4f}, {max_translation_error=:.4f}, {minimax_center_err_R=:.4f}, {minimax_center_err_t=:.4f}"
             )
+            break
 
 
 if __name__ == "__main__":
@@ -265,7 +278,7 @@ if __name__ == "__main__":
         init_sample_num=1000,
     )
     conformal_predictor.load_dataset("data", "linemod", [1, 2, 4, 5, 6, 8, 9], 200)
-    nonconformity_threshold = conformal_predictor.calibrate(0.1)
+    nonconformity_threshold = conformal_predictor.calibrate(epsilon=0.1)
 
     # test_epsilon = conformal_predictor.test_threshold(nonconformity_threshold)
     conformal_predictor.predict_testset(nonconformity_threshold)

@@ -34,7 +34,8 @@ class ClosureFoundationPose(ClosureBase):
         pred_Rs: cp.ndarray,  # (M, 3, 3)
         pred_ts: cp.ndarray,  # (M, 3)
         pred_scores: cp.ndarray,  # (M, )
-    ) -> cp.ndarray: ...
+    ) -> cp.ndarray: 
+        raise NotImplementedError("nonconformity_func is not initialized")
 
     def check_final_poses(
         self,
@@ -54,7 +55,7 @@ class ClosureFoundationPose(ClosureBase):
     ):
         final_Rs: cp.ndarray = cp.matmul(additional_Rs, self.init_Rs[:, None, :, :])
         final_ts: cp.ndarray = (
-            cp.matmul(additional_Rs, self.init_ts[:, None, :, None]).squeeze()
+            cp.matmul(additional_Rs, self.init_ts[:, None, :, None]).squeeze() # type: ignore
             + additional_ts
         )
         return final_Rs.reshape(-1, 3, 3), final_ts.reshape(-1, 3)

@@ -26,7 +26,7 @@ def get_axis_angle(Rs: cp.ndarray):
     return theta[:, None] * axes
 
 
-def get_rotation_diff(Rs1: Union[cp.ndarray, np.ndarray], Rs2: Union[cp.ndarray, np.ndarray]):
+def get_rotation_dist(Rs1: Union[cp.ndarray, np.ndarray], Rs2: Union[cp.ndarray, np.ndarray]):
     """Get the rotation difference between two rotation matrices. Two inputs should have the same shape (..., 3, 3)"""
     assert Rs1.shape == Rs2.shape  # Rs1, Rs2: (..., 3, 3)
     assert Rs1.shape[-2:] == (3, 3)

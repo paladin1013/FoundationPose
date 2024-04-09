@@ -156,6 +156,17 @@ def rotation_miniball(R_set: npt.NDArray[np.float64]):
 
     R_radius = np.arcsin(quat_radius) * 2
 
+    data = {}
+    data["R_set"] = R_set
+    data["R_avg"] = R_avg
+    data["q_set"] = q_set
+    data["q_avg"] = q_avg
+    data["quat_center"] = quat_center
+    data["quat_radius"] = quat_radius
+    data["R_center"] = R_center
+    data["R_radius"] = R_radius
+    np.save("data/closure_test/rotation_miniball.npy", data, allow_pickle=True)
+
     return R_center, R_radius
 
 
