@@ -1,5 +1,6 @@
-from re import U
+from typing import Optional, Union
 import cupy as cp
+import numpy as np
 
 
 def get_axis_angle(Rs: cp.ndarray):
@@ -25,16 +26,25 @@ def get_axis_angle(Rs: cp.ndarray):
     return theta[:, None] * axes
 
 
-def get_rot_diff(Rs1: cp.ndarray, Rs2: cp.ndarray):
+def get_rotation_diff(Rs1: Union[cp.ndarray, np.ndarray], Rs2: Union[cp.ndarray, np.ndarray]):
     """Get the rotation difference between two rotation matrices. Two inputs should have the same shape (..., 3, 3)"""
     assert Rs1.shape == Rs2.shape  # Rs1, Rs2: (..., 3, 3)
     assert Rs1.shape[-2:] == (3, 3)
+    input_numpy = False
+    if isinstance(Rs1, np.ndarray):
+        Rs1 = cp.array(Rs1)
+        input_numpy = True
+    if isinstance(Rs2, np.ndarray):
+        Rs2 = cp.array(Rs2)
+        input_numpy = True
     axes = list(range(Rs1.ndim))
     axes = axes[:-2] + [axes[-1], axes[-2]]
     Rs1_t = Rs1.transpose(axes)  # (..., 3, 3)
     R_diff = cp.matmul(Rs2, Rs1_t)  # (..., 3, 3)
     cos_theta = (cp.trace(R_diff, axis1=-2, axis2=-1) - 1) / 2  # (..., )
     theta = cp.arccos(cp.clip(cos_theta, -1, 1))  # (..., )
+    if input_numpy and isinstance(theta, cp.ndarray):
+        theta = cp.asnumpy(theta)
     return theta
 
 
@@ -49,30 +59,30 @@ def project_to_SO3(Rs: cp.ndarray) -> cp.ndarray:
         Vt[:, 2, :] *= dets[:, None]
     else:
         raise ValueError("Rs should be either (N, 3, 3) or (3, 3)")
-    return cp.matmul(U, Vt) # (N, 3, 3) or (3, 3)
+    return cp.matmul(U, Vt)  # (N, 3, 3) or (3, 3)
 
 
 def sample_convex_combination(
     Rs: cp.ndarray,  # (N, 3, 3)
     ts: cp.ndarray,  # (N, 3)
-    num: int,
+    sample_num: int,
 ):
     """Sample a convex combination of the input rotations and translations"""
     assert Rs.shape[1:] == (3, 3)  # Rs: (N, 3, 3)
     assert ts.shape[1:] == (3,)  # ts: (N, 3)
 
     N = Rs.shape[0]
-    alphas = cp.random.rand(num, N)  # (num, N)
-    alphas /= cp.sum(alphas, axis=0, keepdims=True)  # (num, N)
+    alphas = cp.random.rand(sample_num, N)  # (sample_num, N)
+    alphas /= cp.sum(alphas, axis=0, keepdims=True)  # (sample_num, N)
 
-    Rs = Rs[:, None, :, :]  # (N, 1, 3, 3)
-    ts = ts[:, None, :]  # (N, 1, 3)
+    Rs = Rs[None, :, :, :]  # (1, N, 3, 3)
+    ts = ts[None, :, :]  # (1, N, 3)
 
-    sampled_Rs = cp.sum(Rs * alphas[:, :, None, None], axis=1)  # (num, 3, 3)
+    sampled_Rs = cp.sum(Rs * alphas[:, :, None, None], axis=1)  # (sample_num, 3, 3)
     sampled_Rs = project_to_SO3(sampled_Rs)
-    sampled_ts = cp.sum(ts * alphas[:, :, None], axis=1)  # (num, 3)
+    sampled_ts = cp.sum(ts * alphas[:, :, None], axis=1)  # (sample_num, 3)
 
-    return sampled_Rs, sampled_ts  # (num, 3, 3), (num, 3)
+    return sampled_Rs, sampled_ts  # (sample_num, 3, 3), (sample_num, 3)
 
 
 def rotation_average(Rs: cp.ndarray):
@@ -84,11 +94,12 @@ def rotation_average(Rs: cp.ndarray):
     assert Rs.shape[0] >= 2, "Rotation matrix number should be larger than 2"
 
     # Get the average rotation matrix
-    R_avg = cp.sum(Rs, axis=0) # (3, 3)
+    R_avg = cp.sum(Rs, axis=0)  # (3, 3)
     R_avg /= Rs.shape[0]
     # Project the average rotation matrix to SO(3)
     R_avg = project_to_SO3(R_avg)
     return R_avg
+
 
 def matrix_exponential(A: cp.ndarray, terms: int = 5):
     # A: (N, 3, 3)
@@ -99,6 +110,7 @@ def matrix_exponential(A: cp.ndarray, terms: int = 5):
         powA = cp.matmul(powA, A) / (n + 1)  # type: ignore
 
     return expA
+
 
 def get_rotation(
     ang_vels: cp.ndarray,  # (N, 3)
@@ -117,11 +129,10 @@ def get_rotation(
     return matrix_exponential(skew_symmetric_matrix)  # (N, 3, 3)
 
 
-
 def get_top_k_perturbation_indices(
-    inside: cp.ndarray, # (N*batch_size, perturbation_num)
-    residual: cp.ndarray, # (N*batch_size, perturbation_num)
-    top_k: int
+    inside: cp.ndarray,  # (N*batch_size, perturbation_num)
+    residual: cp.ndarray,  # (N*batch_size, perturbation_num)
+    top_k: int,
 ):
     assert inside.shape == residual.shape
     assert len(inside.shape) == 2
@@ -129,7 +140,7 @@ def get_top_k_perturbation_indices(
     residual[~inside] = -cp.inf
     perturbation_num = inside.shape[1]
 
-    indices = cp.argpartition(residual, perturbation_num-top_k, axis=1)[:, -top_k:]
+    indices = cp.argpartition(residual, perturbation_num - top_k, axis=1)[:, -top_k:]
     return indices
 
 

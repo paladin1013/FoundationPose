@@ -1,5 +1,5 @@
 import cupy as cp
-from gpu_utils import get_rot_diff
+from gpu_utils import get_rotation_diff
 
 
 def max_R(
@@ -18,7 +18,7 @@ def max_R(
 
     pred_prob = pred_scores / cp.sum(pred_scores)  # (M, )
 
-    R_diffs = get_rot_diff(
+    R_diffs = get_rotation_diff(
         cp.repeat(center_Rs[:, None, :, :], pred_Rs.shape[0], axis=1),
         cp.repeat(pred_Rs[None, :, :, :], center_Rs.shape[0], axis=0),
     )  # (K, M)
@@ -45,7 +45,7 @@ def mean_R(
 
     pred_prob = pred_scores / cp.sum(pred_scores)  # (M, )
 
-    R_diffs = get_rot_diff(
+    R_diffs = get_rotation_diff(
         cp.repeat(center_Rs[:, None, :, :], pred_Rs.shape[0], axis=1),
         cp.repeat(pred_Rs[None, :, :, :], center_Rs.shape[0], axis=0),
     )  # (K, M)
@@ -78,7 +78,7 @@ def normalized_max_R(
     # t_diff = cp.linalg.norm(gt_t - pred_t, axis=1)
 
     # Calculate the pairwise difference:
-    pred_R_diffs = get_rot_diff(
+    pred_R_diffs = get_rotation_diff(
         cp.repeat(pred_Rs[:, None, :, :], pred_Rs.shape[0], axis=1),
         cp.repeat(pred_Rs[None, :, :, :], pred_Rs.shape[0], axis=0),
     )  # (M, M)
@@ -111,15 +111,13 @@ def normalized_mean_R(
     # t_diff = cp.linalg.norm(gt_t - pred_t, axis=1)
 
     # Calculate the pairwise difference:
-    pred_R_diffs = get_rot_diff(
+    pred_R_diffs = get_rotation_diff(
         cp.repeat(pred_Rs[:, None, :, :], pred_Rs.shape[0], axis=1),
         cp.repeat(pred_Rs[None, :, :, :], pred_Rs.shape[0], axis=0),
     )  # (M, M)
     mean_R_diffs = cp.mean(pred_R_diffs, axis=1)  # (M, )
     normalized_R_diffs = R_diffs / mean_R_diffs[None, :]  # (K, M)
 
-    nonconformity = (
-        cp.sum(normalized_R_diffs * pred_prob[None, :], axis=1)
-    )  # (K, )
+    nonconformity = cp.sum(normalized_R_diffs * pred_prob[None, :], axis=1)  # (K, )
 
     return nonconformity

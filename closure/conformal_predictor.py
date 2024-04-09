@@ -1,9 +1,15 @@
+import os
+import sys
+sys.path.append(os.path.dirname(os.path.dirname(__file__)))
+
 from dataclasses import dataclass
 from typing import Dict, List, Tuple
 import numpy as np
 import numpy.typing as npt
 import cupy as cp
-from gpu_utils import sample_convex_combination
+from closure.closure_foundation_pose import ClosureFoundationPose
+from gpu_utils import get_rotation_diff, sample_convex_combination
+from closure.miniball import miniball, rotation_miniball
 import nonconformity_funcs as F
 
 
@@ -34,10 +40,12 @@ class ConfromalPredictor:
 
         assert nonconformity_func_name in F.__dict__.keys()
         print(f"Using {nonconformity_func_name} as nonconformity function")
+        self.nonconformity_func_name = nonconformity_func_name
         self.nonconformity_func = getattr(F, nonconformity_func_name)
         self.top_hypotheses_num = top_hypotheses_num
         self.seed = 0
         np.random.seed(seed)
+        cp.random.seed(seed)
 
         self.init_sample_num = init_sample_num
 
@@ -165,15 +173,19 @@ class ConfromalPredictor:
         pred_ts: npt.NDArray[np.float32],  # (M, 3)
         pred_scores: npt.NDArray[np.float32],  # (M)
         nonconformity_threshold: float,
-    ) -> Tuple[npt.NDArray[np.float32], float, float]:
+    ) -> Tuple[npt.NDArray, npt.NDArray, float, float]:
         """
         Return:
-            - minimax_center_pose: (4, 4)
+            - minimax_center_R: (3, 3)
+            - minimax_center_t: (3, )
             - max_rotation_error: float
             - max_translation_error: float
         """
 
         # First do sampling in the sets
+        pred_Rs = cp.array(pred_Rs)
+        pred_ts = cp.array(pred_ts)
+        pred_scores = cp.array(pred_scores)
 
         center_Rs, center_ts = sample_convex_combination(
             cp.array(pred_Rs), cp.array(pred_ts), self.init_sample_num
@@ -184,23 +196,76 @@ class ConfromalPredictor:
         valid_center_Rs = center_Rs[nonconformity_scores < nonconformity_threshold]
         valid_center_ts = center_ts[nonconformity_scores < nonconformity_threshold]
 
-        print(f"{valid_center_Rs.shape=}, {valid_center_ts.shape=}")
-
         # Then do the rigid sim algorithms
 
-        # Finally get the minimax_center_poses, max_rotation_errors, max_translation_errors
-        minimax_center_poses = np.zeros((4, 4), dtype=np.float32)
-        max_rotation_error = 0
-        max_translation_error = 0
-        return minimax_center_poses, max_rotation_error, max_translation_error
+        closure = ClosureFoundationPose(
+            pred_Rs=pred_Rs,
+            pred_ts=pred_ts,
+            pred_scores=pred_scores,
+            nonconformity_func_name=self.nonconformity_func_name,
+            nonconformity_threshold=nonconformity_threshold,
+            init_Rs=valid_center_Rs,
+            init_ts=valid_center_ts,
+            n_iterations=5,
+            n_walks=20,
+            base_ang_vel=0.5,
+            base_lin_vel=0.2,
+            decay_factor=0.5,
+            n_time_steps=15,
+            R_perturbation_scale=0.2,
+            t_perturbation_scale=0.1,
+            n_perturbations=150,
+            n_optimal_perturbations=10,
+            device_id=0,
+        )
+        Rs, ts = closure.run()
+        Rs = cp.asnumpy(Rs)
+        ts = cp.asnumpy(ts)
+
+        # Finally get the minimax_center_R, minimax_center_t, max_rotation_errors, max_translation_errors
+        minimax_center_R, max_rotation_error = rotation_miniball(Rs)
+        minimax_center_t, max_translation_error = miniball(ts)
+        return (
+            minimax_center_R,
+            minimax_center_t,
+            max_rotation_error,
+            max_translation_error,
+        )
+
+    def predict_testset(self, nonocnformaty_threshold: float):
+        for k in range(self.test_set.size):
+            (
+                minimax_center_R,
+                minimax_center_t,
+                max_rotation_error,
+                max_translation_error,
+            ) = self.predict(
+                self.test_set.pred_Rs[k],
+                self.test_set.pred_ts[k],
+                self.test_set.pred_scores[k],
+                nonocnformaty_threshold,
+            )
+            minimax_center_err_R = get_rotation_diff(
+                cp.array(minimax_center_R), cp.array(self.test_set.gt_Rs[k])
+            )
+            minimax_center_err_t = np.linalg.norm(
+                minimax_center_t - self.test_set.gt_ts[k]
+            )
+
+            print(
+                f"{self.test_set.object_ids[k]=}, {max_rotation_error=:.4f}, {max_translation_error=:.4f}, {minimax_center_err_R=:.4f}, {minimax_center_err_t=:.4f}"
+            )
 
 
 if __name__ == "__main__":
 
     conformal_predictor = ConfromalPredictor(
-        nonconformity_func_name="normalized_mean_R", top_hypotheses_num=10, init_sample_num=1000
+        nonconformity_func_name="normalized_max_R",
+        top_hypotheses_num=10,
+        init_sample_num=1000,
     )
     conformal_predictor.load_dataset("data", "linemod", [1, 2, 4, 5, 6, 8, 9], 200)
     nonconformity_threshold = conformal_predictor.calibrate(0.1)
 
-    test_epsilon = conformal_predictor.test_threshold(nonconformity_threshold)
+    # test_epsilon = conformal_predictor.test_threshold(nonconformity_threshold)
+    conformal_predictor.predict_testset(nonconformity_threshold)

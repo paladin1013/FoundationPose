@@ -2,8 +2,6 @@ from abc import abstractmethod
 from typing import Tuple, Union
 import cupy as cp
 import time
-import numpy as np
-import numpy.typing as npt
 
 from closure.gpu_utils import get_axis_angle, get_rotation, rotation_average
 
@@ -11,10 +9,10 @@ from closure.gpu_utils import get_axis_angle, get_rotation, rotation_average
 class ClosureBase:
     def __init__(
         self,
-        n_iterations: int,
-        n_walks: int,
         init_Rs: cp.ndarray,  # (N, 3, 3)
         init_ts: cp.ndarray,  # (N, 3, )
+        n_iterations: int,
+        n_walks: int,
         base_ang_vel: float,
         base_lin_vel: float,
         decay_factor: float,
@@ -82,13 +80,9 @@ class ClosureBase:
         R_diff = cp.matmul(self.init_Rs, R_center.T[None, :, :])  # (N, 3, 3)
         ax_ang = get_axis_angle(R_diff)  # (N, 3)
         base_ang_vel = (
-            ax_ang
-            / cp.linalg.norm(ax_ang, axis=1, keepdims=True)
-            * self.base_ang_vel
+            ax_ang / cp.linalg.norm(ax_ang, axis=1, keepdims=True) * self.base_ang_vel
         )  # (N, 3)
-        rand_ang_vel = (
-            cp.random.rand(N, self.n_walks, 3) * 2 - 1
-        )  # (N, n_walks, 3)
+        rand_ang_vel = cp.random.rand(N, self.n_walks, 3) * 2 - 1  # (N, n_walks, 3)
         rand_ang_vel = rand_ang_vel / cp.linalg.norm(
             rand_ang_vel, axis=2, keepdims=True
         )  # (N, n_walks, 3)
@@ -110,7 +104,6 @@ class ClosureBase:
 
         return R_movements
 
-
     def get_translation_movements(self) -> cp.ndarray:
         """
         Return:
@@ -122,13 +115,9 @@ class ClosureBase:
         t_diff = self.init_ts - t_center  # (N, 3)
 
         base_lin_vel = (
-            t_diff
-            / cp.linalg.norm(t_diff, axis=1, keepdims=True)
-            * self.base_lin_vel
+            t_diff / cp.linalg.norm(t_diff, axis=1, keepdims=True) * self.base_lin_vel
         )  # (N, 3)
-        rand_lin_vel = (
-            cp.random.rand(N, self.n_walks, 3) * 2 - 1
-        )  # (N, n_walks, 3)
+        rand_lin_vel = cp.random.rand(N, self.n_walks, 3) * 2 - 1  # (N, n_walks, 3)
         rand_lin_vel = rand_lin_vel / cp.linalg.norm(
             rand_lin_vel, axis=2, keepdims=True
         )  # (N, n_walks, 3)
@@ -183,7 +172,6 @@ class ClosureBase:
         temp_t_perturbation[:, 0, :] = cp.zeros((self.n_iterations, 3))
 
         return temp_t_perturbation  # (n_iterations, n_perturbations, 3)
-
 
     @abstractmethod
     def get_final_poses(
@@ -241,3 +229,9 @@ class ClosureBase:
         # additional_Rs = additional_Rs_t
         # additional_ts = additional_ts_t
         return additional_Rs, additional_ts
+
+    def run(self):
+        additional_Rs, additional_ts = self.run_sampling()
+        Rs, ts = self.get_final_poses(additional_Rs, additional_ts)
+        assert cp.all(self.check_final_poses(Rs, ts))
+        return Rs, ts
