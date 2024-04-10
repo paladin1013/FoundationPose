@@ -1,5 +1,6 @@
 from typing import Tuple
 from cupy._core import ndarray
+from line_profiler import profile
 from closure.gpu_utils import get_successful_idx, get_top_k_perturbation_indices
 from closure_base import ClosureBase
 import cupy as cp
@@ -37,6 +38,7 @@ class ClosureFoundationPose(ClosureBase):
     ) -> cp.ndarray: 
         raise NotImplementedError("nonconformity_func is not initialized")
 
+
     def check_final_poses(
         self,
         Rs: cp.ndarray,  # (N, 3, 3)
@@ -47,6 +49,7 @@ class ClosureFoundationPose(ClosureBase):
         )
         inside = nonconformity_scores < self.nonconformity_threshold
         return inside
+
 
     def get_final_poses(
         self,
@@ -59,6 +62,7 @@ class ClosureFoundationPose(ClosureBase):
             + additional_ts
         )
         return final_Rs.reshape(-1, 3, 3), final_ts.reshape(-1, 3)
+
 
     def check_additional_poses(
         self,
@@ -86,6 +90,7 @@ class ClosureFoundationPose(ClosureBase):
         inside = nonconformity_scores < self.nonconformity_threshold  # (N, n_walks)
         residuals = self.nonconformity_threshold - nonconformity_scores  # (N, n_walks)
         return inside, residuals
+
 
     def sample_rotation_boundary(self) -> Tuple[cp.ndarray, cp.ndarray]:
 

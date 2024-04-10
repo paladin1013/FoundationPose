@@ -1,4 +1,5 @@
 import cupy as cp
+from line_profiler import profile
 from gpu_utils import get_rotation_dist
 
 
@@ -287,6 +288,8 @@ def mean_Rt(
 
     return nonconformity
 
+
+@profile
 def normalized_max_Rt(
     center_Rs: cp.ndarray,  # (K, 3, 3)
     center_ts: cp.ndarray,  # (K, 3)
@@ -329,7 +332,7 @@ def normalized_max_Rt(
     return nonconformity
 
 
-
+@profile
 def normalized_mean_Rt(
     center_Rs: cp.ndarray,  # (K, 3, 3)
     center_ts: cp.ndarray,  # (K, 3)

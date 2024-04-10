@@ -1,7 +1,7 @@
 from typing import Optional, Union
 import cupy as cp
 import numpy as np
-
+from line_profiler import profile
 
 def get_axis_angle(Rs: cp.ndarray):
     """Get the axis-angle representation of a rotation matrix"""
@@ -25,7 +25,7 @@ def get_axis_angle(Rs: cp.ndarray):
     axes[~close_to_0, :] = valid_axes
     return theta[:, None] * axes
 
-
+@profile
 def get_rotation_dist(Rs1: Union[cp.ndarray, np.ndarray], Rs2: Union[cp.ndarray, np.ndarray]):
     """Get the rotation difference between two rotation matrices. Two inputs should have the same shape (..., 3, 3)"""
     assert Rs1.shape == Rs2.shape  # Rs1, Rs2: (..., 3, 3)
