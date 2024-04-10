@@ -246,6 +246,10 @@ class ConfromalPredictor:
                 nonocnformaty_threshold,
             )
 
+            # print("GT:")
+            # print(self.test_set.gt_Rs[k])
+            # print("Minimax center:")
+            # print(minimax_center_R)
             minimax_center_err_R = get_rotation_dist(
                 cp.array(minimax_center_R), cp.array(self.test_set.gt_Rs[k])
             )
@@ -265,9 +269,9 @@ class ConfromalPredictor:
             data["minimax_center_err_t"] = minimax_center_err_t
             np.save(f"data/closure_test/test_result_{self.test_set.data_ids[k]}.npy", data, allow_pickle=True)
             print(
-                f"{self.test_set.data_ids[k]=}, {max_rotation_error=:.4f}, {max_translation_error=:.4f}, {minimax_center_err_R=:.4f}, {minimax_center_err_t=:.4f}"
+                f"{self.test_set.data_ids[k]=}, {max_rotation_error=:.4f}, {max_translation_error=:.4f}, {minimax_center_err_R=:.8f}, {minimax_center_err_t=:.8f}"
             )
-            break
+            
 
 
 if __name__ == "__main__":

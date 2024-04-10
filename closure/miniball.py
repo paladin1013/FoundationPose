@@ -52,22 +52,34 @@ def rotation_matrix_to_quaternion(Rs: npt.NDArray[np.float64]):
     Ks = np.zeros((n, 4, 4))
     R = Rs[:, :, :]
 
-    Ks[:, 0, 0] = 1 + R[:, 0, 0] - R[:, 1, 1] - R[:, 2, 2]
-    Ks[:, 1, 1] = 1 + R[:, 1, 1] - R[:, 0, 0] - R[:, 2, 2]
-    Ks[:, 2, 2] = 1 + R[:, 2, 2] - R[:, 0, 0] - R[:, 1, 1]
-    Ks[:, 3, 3] = 1 + R[:, 0, 0] + R[:, 1, 1] + R[:, 2, 2]
+    # Ks[:, 0, 0] = 1 + R[:, 0, 0] - R[:, 1, 1] - R[:, 2, 2]
+    # Ks[:, 1, 1] = 1 + R[:, 1, 1] - R[:, 0, 0] - R[:, 2, 2]
+    # Ks[:, 2, 2] = 1 + R[:, 2, 2] - R[:, 0, 0] - R[:, 1, 1]
+    # Ks[:, 3, 3] = 1 + R[:, 0, 0] + R[:, 1, 1] + R[:, 2, 2]
+    # Ks[:, 0, 1] = Ks[:, 1, 0] = R[:, 0, 1] + R[:, 1, 0]
+    # Ks[:, 0, 2] = Ks[:, 2, 0] = R[:, 0, 2] + R[:, 2, 0]
+    # Ks[:, 0, 3] = Ks[:, 3, 0] = R[:, 1, 2] - R[:, 2, 1]
+    # Ks[:, 1, 2] = Ks[:, 2, 1] = R[:, 1, 2] + R[:, 2, 1]
+    # Ks[:, 1, 3] = Ks[:, 3, 1] = R[:, 2, 0] - R[:, 0, 2]
+    # Ks[:, 2, 3] = Ks[:, 3, 2] = R[:, 0, 1] - R[:, 1, 0]
+
+    Ks[:, 0, 0] = R[:, 0, 0] - R[:, 1, 1] - R[:, 2, 2]
+    Ks[:, 1, 1] = R[:, 1, 1] - R[:, 0, 0] - R[:, 2, 2]
+    Ks[:, 2, 2] = R[:, 2, 2] - R[:, 0, 0] - R[:, 1, 1]
+    Ks[:, 3, 3] = R[:, 0, 0] + R[:, 1, 1] + R[:, 2, 2]
     Ks[:, 0, 1] = Ks[:, 1, 0] = R[:, 0, 1] + R[:, 1, 0]
     Ks[:, 0, 2] = Ks[:, 2, 0] = R[:, 0, 2] + R[:, 2, 0]
-    Ks[:, 0, 3] = Ks[:, 3, 0] = R[:, 1, 2] - R[:, 2, 1]
+    Ks[:, 0, 3] = Ks[:, 3, 0] = R[:, 2, 1] - R[:, 1, 2]
     Ks[:, 1, 2] = Ks[:, 2, 1] = R[:, 1, 2] + R[:, 2, 1]
-    Ks[:, 1, 3] = Ks[:, 3, 1] = R[:, 2, 0] - R[:, 0, 2]
-    Ks[:, 2, 3] = Ks[:, 3, 2] = R[:, 0, 1] - R[:, 1, 0]
+    Ks[:, 1, 3] = Ks[:, 3, 1] = R[:, 0, 2] - R[:, 2, 0]
+    Ks[:, 2, 3] = Ks[:, 3, 2] = R[:, 1, 0] - R[:, 0, 1]
     Ks /= 3
 
     quaternions = np.zeros((n, 4))
     for i in range(n):
         eigenvalues, eigenvectors = np.linalg.eigh(Ks[i])
-        quaternions[i] = eigenvectors[:, np.argmax(eigenvalues)]
+        quaternions[i] = [eigenvectors[3, np.argmax(eigenvalues)],eigenvectors[0, np.argmax(eigenvalues)],eigenvectors[1, np.argmax(eigenvalues)],eigenvectors[2, np.argmax(eigenvalues)]]
+        # print(eigenvectors[2, np.argmax(eigenvalues)])
 
     return quaternions
 
@@ -90,6 +102,16 @@ def quaternion_to_rotation_matrix(quaternions: npt.NDArray[np.float64]):
     Rs[:, 1, 0] = 2 * q[:, 1] * q[:, 2] + 2 * q[:, 0] * q[:, 3]
     Rs[:, 2, 0] = 2 * q[:, 1] * q[:, 3] - 2 * q[:, 0] * q[:, 2]
     Rs[:, 2, 1] = 2 * q[:, 2] * q[:, 3] + 2 * q[:, 0] * q[:, 1]
+
+    # Rs[:, 0, 0] = 2 * q[:, 0] ** 2 + 2 * q[:, 1] ** 2 - 1
+    # Rs[:, 1, 1] = 2 * q[:, 0] ** 2 + 2 * q[:, 0] ** 2 - 1
+    # Rs[:, 2, 2] = 2 * q[:, 0] ** 2 - 2 * q[:, 3] ** 2 - 1
+    # Rs[:, 0, 1] = 2 * q[:, 1] * q[:, 2] - 2 * q[:, 0] * q[:, 3]
+    # Rs[:, 0, 2] = 2 * q[:, 1] * q[:, 3] + 2 * q[:, 0] * q[:, 2]
+    # Rs[:, 1, 2] = 2 * q[:, 2] * q[:, 3] - 2 * q[:, 0] * q[:, 1]
+    # Rs[:, 1, 0] = 2 * q[:, 1] * q[:, 2] + 2 * q[:, 0] * q[:, 3]
+    # Rs[:, 2, 0] = 2 * q[:, 1] * q[:, 3] - 2 * q[:, 0] * q[:, 2]
+    # Rs[:, 2, 1] = 2 * q[:, 2] * q[:, 3] + 2 * q[:, 0] * q[:, 1]
 
     return Rs
 
@@ -152,7 +174,18 @@ def rotation_miniball(R_set: npt.NDArray[np.float64]):
 
     [quat_center, quat_radius] = miniball(q_set)
 
+    quat_center  = quat_center / np.linalg.norm(quat_center)
+
+    # print(f"Quat Center Norm: {np.linalg.norm(quat_center)}")
+
+    angs = q_set @ quat_center
+
+    # print(f'Quat Center: {quat_center}')
     R_center = quaternion_to_rotation_matrix(quat_center.reshape(1, 4)).reshape(3, 3)
+
+    # print(R_center)
+
+    # print(f'Quat Radius: {quat_radius}')
 
     R_radius = np.arcsin(quat_radius) * 2
 
@@ -165,7 +198,11 @@ def rotation_miniball(R_set: npt.NDArray[np.float64]):
     data["quat_radius"] = quat_radius
     data["R_center"] = R_center
     data["R_radius"] = R_radius
-    np.save("data/closure_test/rotation_miniball.npy", data, allow_pickle=True)
+    data["signs"] = signs
+    data["angs"] = angs
+
+    # print(f'Max angs error: {min(abs(angs))}')
+    # np.save("data/closure_test/rotation_miniball.npy", data, allow_pickle=True)
 
     return R_center, R_radius
 
@@ -173,14 +210,26 @@ def rotation_miniball(R_set: npt.NDArray[np.float64]):
 if __name__ == "__main__":
     import time
 
-    np.random.seed(0)
+    np.random.seed(1)
 
-    R_set = np.random.randn(10000, 3, 3)
-    for i in range(10000):
+    num = 1
+    R_set = np.random.randn(num, 3, 3)
+    for i in range(num):
         R_set[i] = project_to_SO3(R_set[i])
-    start = time.time()
-    R_center, R_radius = rotation_miniball(R_set)
-    end = time.time()
-    print(f"Time: {end-start}")
-    print(R_center)
-    print(R_radius)
+    # start = time.time()
+    # R_center, R_radius = rotation_miniball(R_set)
+    # end = time.time()
+    # print(f"Time: {end-start}")
+    # print(R_center)
+    # print(R_radius)
+
+
+    # R_test = project_to_SO3(np.random.randn(3, 3))
+
+    q_test = rotation_matrix_to_quaternion(R_set)
+    # q_test[0,3] = -q_test[0,3]
+    R_test_recover = quaternion_to_rotation_matrix(q_test.reshape(1, 4)).reshape(3, 3)
+
+    print(R_set)
+    print(q_test)
+    print(R_test_recover)
