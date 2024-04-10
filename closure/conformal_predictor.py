@@ -11,7 +11,7 @@ from closure.closure_foundation_pose import ClosureFoundationPose
 from gpu_utils import get_rotation_dist, sample_convex_combination
 from closure.miniball import miniball, rotation_miniball
 import nonconformity_funcs as F
-
+import argparse
 
 @dataclass
 class Dataset:
@@ -193,6 +193,7 @@ class ConfromalPredictor:
         nonconformity_scores = self.nonconformity_func(
             center_Rs, center_ts, pred_Rs, pred_ts, pred_scores
         )
+        # print(f"{cp.sum(nonconformity_scores < nonconformity_threshold)=}, {nonconformity_scores.size=}")
         valid_center_Rs = center_Rs[nonconformity_scores < nonconformity_threshold]
         valid_center_ts = center_ts[nonconformity_scores < nonconformity_threshold]
 
@@ -225,6 +226,7 @@ class ConfromalPredictor:
         # Finally get the minimax_center_R, minimax_center_t, max_rotation_errors, max_translation_errors
         minimax_center_R, max_rotation_error = rotation_miniball(Rs)
         minimax_center_t, max_translation_error = miniball(ts)
+
         return (
             minimax_center_R,
             minimax_center_t,
@@ -245,29 +247,24 @@ class ConfromalPredictor:
                 self.test_set.pred_scores[k],
                 nonocnformaty_threshold,
             )
-
-            # print("GT:")
-            # print(self.test_set.gt_Rs[k])
-            # print("Minimax center:")
-            # print(minimax_center_R)
             minimax_center_err_R = get_rotation_dist(
                 cp.array(minimax_center_R), cp.array(self.test_set.gt_Rs[k])
             )
             minimax_center_err_t = np.linalg.norm(
                 minimax_center_t - self.test_set.gt_ts[k]
             )
-            data = {}
-            data["gt_Rs"] = self.test_set.gt_Rs[k]
-            data["gt_ts"] = self.test_set.gt_ts[k]
-            data["pred_Rs"] = self.test_set.pred_Rs[k]
-            data["pred_ts"] = self.test_set.pred_ts[k]
-            data["minimax_center_R"] = minimax_center_R
-            data["minimax_center_t"] = minimax_center_t
-            data["max_rotation_error"] = max_rotation_error
-            data["max_translation_error"] = max_translation_error
-            data["minimax_center_err_R"] = minimax_center_err_R
-            data["minimax_center_err_t"] = minimax_center_err_t
-            np.save(f"data/closure_test/test_result_{self.test_set.data_ids[k]}.npy", data, allow_pickle=True)
+            # data = {}
+            # data["gt_Rs"] = self.test_set.gt_Rs[k]
+            # data["gt_ts"] = self.test_set.gt_ts[k]
+            # data["pred_Rs"] = self.test_set.pred_Rs[k]
+            # data["pred_ts"] = self.test_set.pred_ts[k]
+            # data["minimax_center_R"] = minimax_center_R
+            # data["minimax_center_t"] = minimax_center_t
+            # data["max_rotation_error"] = max_rotation_error
+            # data["max_translation_error"] = max_translation_error
+            # data["minimax_center_err_R"] = minimax_center_err_R
+            # data["minimax_center_err_t"] = minimax_center_err_t
+            # np.save(f"data/closure_test/test_result_{self.test_set.data_ids[k]}.npy", data, allow_pickle=True)
             print(
                 f"{self.test_set.data_ids[k]=}, {max_rotation_error=:.4f}, {max_translation_error=:.4f}, {minimax_center_err_R=:.8f}, {minimax_center_err_t=:.8f}"
             )
@@ -276,12 +273,17 @@ class ConfromalPredictor:
 
 if __name__ == "__main__":
 
+    # for name in ["max_R", "max_t", "mean_R", "mean_t", "normalized_max_R", "normalized_max_t", "normalized_mean_R", "normalized_mean_t"]:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--nonconformity_func", type=str)
+    args = parser.parse_args()
+
     conformal_predictor = ConfromalPredictor(
-        nonconformity_func_name="normalized_max_R",
+        nonconformity_func_name=args.nonconformity_func,
         top_hypotheses_num=10,
         init_sample_num=1000,
     )
-    conformal_predictor.load_dataset("data", "linemod", [1, 2, 4, 5, 6, 8, 9], 200)
+    conformal_predictor.load_dataset("data", "linemod", [1, 2, 4, 5, 6, 8, 9], 500)
     nonconformity_threshold = conformal_predictor.calibrate(epsilon=0.1)
 
     # test_epsilon = conformal_predictor.test_threshold(nonconformity_threshold)

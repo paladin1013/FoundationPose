@@ -73,7 +73,7 @@ def sample_convex_combination(
 
     N = Rs.shape[0]
     alphas = cp.random.rand(sample_num, N)  # (sample_num, N)
-    alphas /= cp.sum(alphas, axis=0, keepdims=True)  # (sample_num, N)
+    alphas /= cp.sum(alphas, axis=1, keepdims=True)  # (sample_num, N)
 
     Rs = Rs[None, :, :, :]  # (1, N, 3, 3)
     ts = ts[None, :, :]  # (1, N, 3)
