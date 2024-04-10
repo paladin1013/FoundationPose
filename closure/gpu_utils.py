@@ -37,16 +37,21 @@ def get_rotation_dist(Rs1: Union[cp.ndarray, np.ndarray], Rs2: Union[cp.ndarray,
     if isinstance(Rs2, np.ndarray):
         Rs2 = cp.array(Rs2)
         input_numpy = True
-    axes = list(range(Rs1.ndim))
-    axes = axes[:-2] + [axes[-1], axes[-2]]
-    Rs1_t = Rs1.transpose(axes)  # (..., 3, 3)
-    R_diff = cp.matmul(Rs2, Rs1_t)  # (..., 3, 3)
-    cos_theta = (cp.trace(R_diff, axis1=-2, axis2=-1) - 1) / 2  # (..., )
+
+    mul_R_diff = cp.multiply(Rs2, Rs1)  # (..., )
+    trace_0 = cp.sum(mul_R_diff[..., :, 0], axis=-1)
+    trace_1 = cp.sum(mul_R_diff[..., :, 1], axis=-1)
+    trace_2 = cp.sum(mul_R_diff[..., :, 2], axis=-1)
+    trace_R_diff = trace_0+trace_1+trace_2
+
+    # The above method is much faster than due to memory access
+    # trace_R_diff = cp.sum(mul_R_diff, axis=(-1, -2))
+
+    cos_theta = (trace_R_diff - 1) / 2  # (..., )
     theta = cp.arccos(cp.clip(cos_theta, -1, 1))  # (..., )
     if input_numpy and isinstance(theta, cp.ndarray):
         theta = cp.asnumpy(theta)
     return theta
-
 
 def project_to_SO3(Rs: cp.ndarray) -> cp.ndarray:
     """Project the rotation matrices to SO(3), Rs: (N, 3, 3) or (3, 3)"""

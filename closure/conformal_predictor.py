@@ -129,22 +129,92 @@ class ConfromalPredictor:
         pred_ts: cp.ndarray,  # (M, 3)
         pred_scores: cp.ndarray,  # (M, )
     ) -> cp.ndarray:  # output: (K, )
-
-        raise NotImplementedError("nonconformity_func is not initialized")
+        if "Rt" in self.nonconformity_func_name:
+            R_ratio = F.calibrated_R_ratio
+            t_ratio = F.calibrated_t_ratio
+        elif "R" in self.nonconformity_func_name:
+            R_ratio = 1
+            t_ratio = 0
+        elif "t" in self.nonconformity_func_name:
+            R_ratio = 0
+            t_ratio = 1
+        else:
+            raise ValueError("Invalid nonconformity function name")
+        return F.nonconformity_func(
+            center_Rs,
+            center_ts,
+            pred_Rs,
+            pred_ts,
+            pred_scores,
+            aggregate_method="mean" if "mean" in self.nonconformity_func_name else "max",
+            normalize=True if "normalized" in self.nonconformity_func_name else False,
+            R_ratio = R_ratio,
+            t_ratio = t_ratio,
+        )
 
     def calibrate(self, epsilon: float):
-        nonconformity_scores = np.zeros(self.calibration_set.size)
-        for k in range(self.calibration_set.size):
-            nonconformity_scores[k] = cp.asnumpy(
-                self.nonconformity_func(
-                    cp.array(self.calibration_set.gt_Rs[k][None, :, :]),
-                    cp.array(self.calibration_set.gt_ts[k][None, :]),
-                    cp.array(self.calibration_set.pred_Rs[k]),
-                    cp.array(self.calibration_set.pred_ts[k]),
-                    cp.array(self.calibration_set.pred_scores[k]),
-                )
-            )[0]
-        nonconformity_threshold = float(np.quantile(nonconformity_scores, 1 - epsilon))
+        if "Rt" not in self.nonconformity_func_name:
+            # Only single component
+            nonconformity_scores = np.zeros(self.calibration_set.size)
+            for k in range(self.calibration_set.size):
+                nonconformity_scores[k] = cp.asnumpy(
+                    self.nonconformity_func(
+                        cp.array(self.calibration_set.gt_Rs[k][None, :, :]),
+                        cp.array(self.calibration_set.gt_ts[k][None, :]),
+                        cp.array(self.calibration_set.pred_Rs[k]),
+                        cp.array(self.calibration_set.pred_ts[k]),
+                        cp.array(self.calibration_set.pred_scores[k]),
+                    )
+                )[0]
+            nonconformity_threshold = float(np.quantile(nonconformity_scores, 1 - epsilon))
+        else:
+            # Two components
+            nonconformity_scores_R = np.zeros(self.calibration_set.size)
+            nonconformity_scores_t = np.zeros(self.calibration_set.size)
+            for k in range(self.calibration_set.size):
+                nonconformity_scores_R[k] = cp.asnumpy(
+                    F.nonconformity_func(
+                        cp.array(self.calibration_set.gt_Rs[k][None, :, :]),
+                        cp.array(self.calibration_set.gt_ts[k][None, :]),
+                        cp.array(self.calibration_set.pred_Rs[k]),
+                        cp.array(self.calibration_set.pred_ts[k]),
+                        cp.array(self.calibration_set.pred_scores[k]),
+                        aggregate_method="mean" if "mean" in self.nonconformity_func_name else "max",
+                        normalize=True if "normalized" in self.nonconformity_func_name else False,
+                        R_ratio = 1,
+                        t_ratio = 0,
+                    )
+                )[0]
+                nonconformity_scores_t[k] = cp.asnumpy(
+                    F.nonconformity_func(
+                        cp.array(self.calibration_set.gt_Rs[k][None, :, :]),
+                        cp.array(self.calibration_set.gt_ts[k][None, :]),
+                        cp.array(self.calibration_set.pred_Rs[k]),
+                        cp.array(self.calibration_set.pred_ts[k]),
+                        cp.array(self.calibration_set.pred_scores[k]),
+                        aggregate_method="mean" if "mean" in self.nonconformity_func_name else "max",
+                        normalize=True if "normalized" in self.nonconformity_func_name else False,
+                        R_ratio = 0,
+                        t_ratio = 1,
+                    )
+                )[0]
+            nonconformity_threshold_R = float(np.quantile(nonconformity_scores_R, 1 - epsilon))
+            nonconformity_threshold_t = float(np.quantile(nonconformity_scores_t, 1 - epsilon))
+            F.calibrated_R_ratio = 1/nonconformity_threshold_R
+            F.calibrated_t_ratio = 1/nonconformity_threshold_t
+            # Recalibrate with correct ratios
+            nonconformity_scores = np.zeros(self.calibration_set.size)
+            for k in range(self.calibration_set.size):
+                nonconformity_scores[k] = cp.asnumpy(
+                    self.nonconformity_func(
+                        cp.array(self.calibration_set.gt_Rs[k][None, :, :]),
+                        cp.array(self.calibration_set.gt_ts[k][None, :]),
+                        cp.array(self.calibration_set.pred_Rs[k]),
+                        cp.array(self.calibration_set.pred_ts[k]),
+                        cp.array(self.calibration_set.pred_scores[k]),
+                    )
+                )[0]
+            nonconformity_threshold = float(np.quantile(nonconformity_scores, 1 - epsilon))
 
         print(f"{self.calibration_set.size=}, {nonconformity_threshold=}")
         return nonconformity_threshold
@@ -238,7 +308,7 @@ class ConfromalPredictor:
     def predict_testset(self, nonocnformaty_threshold: float):
         # for k in range(self.test_set.size):
         predict_data = []
-        for k in range(20):
+        for k in range(50):
             (
                 minimax_center_R,
                 minimax_center_t,
@@ -296,5 +366,5 @@ if __name__ == "__main__":
     conformal_predictor.load_dataset("data", "linemod", [1, 2, 4, 5, 6, 8, 9], 500)
     nonconformity_threshold = conformal_predictor.calibrate(epsilon=0.1)
 
-    # test_epsilon = conformal_predictor.test_threshold(nonconformity_threshold)
-    conformal_predictor.predict_testset(nonconformity_threshold)
+    test_epsilon = conformal_predictor.test_threshold(nonconformity_threshold)
+    # conformal_predictor.predict_testset(nonconformity_threshold)
