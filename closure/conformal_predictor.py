@@ -38,10 +38,7 @@ class ConfromalPredictor:
         self.calibration_set: Dataset
         self.test_set: Dataset
 
-        assert nonconformity_func_name in F.__dict__.keys()
-        print(f"Using {nonconformity_func_name} as nonconformity function")
         self.nonconformity_func_name = nonconformity_func_name
-        self.nonconformity_func = getattr(F, nonconformity_func_name)
         self.top_hypotheses_num = top_hypotheses_num
         self.seed = 0
         np.random.seed(seed)
@@ -202,6 +199,7 @@ class ConfromalPredictor:
             nonconformity_threshold_t = float(np.quantile(nonconformity_scores_t, 1 - epsilon))
             F.calibrated_R_ratio = 1/nonconformity_threshold_R
             F.calibrated_t_ratio = 1/nonconformity_threshold_t
+            print(f"{F.calibrated_R_ratio=}, {F.calibrated_t_ratio=}")
             # Recalibrate with correct ratios
             nonconformity_scores = np.zeros(self.calibration_set.size)
             for k in range(self.calibration_set.size):
@@ -244,13 +242,15 @@ class ConfromalPredictor:
         pred_ts: npt.NDArray[np.float32],  # (M, 3)
         pred_scores: npt.NDArray[np.float32],  # (M)
         nonconformity_threshold: float,
-    ) -> Tuple[npt.NDArray, npt.NDArray, float, float]:
+    ) -> Tuple[npt.NDArray, npt.NDArray, float, float, npt.NDArray, npt.NDArray]:
         """
         Return:
             - minimax_center_R: (3, 3)
             - minimax_center_t: (3, )
             - error_bound_R: float
             - error_bound_t: float
+            - R_set: (N, 3, 3)
+            - t_set: (N, 3)
         """
 
         # First do sampling in the sets
@@ -290,6 +290,7 @@ class ConfromalPredictor:
             n_optimal_perturbations=10,
             device_id=0,
         )
+        
         Rs, ts = closure.run()
         Rs = cp.asnumpy(Rs)
         ts = cp.asnumpy(ts)
@@ -303,6 +304,8 @@ class ConfromalPredictor:
             minimax_center_t,
             error_bound_R,
             error_bound_t,
+            Rs,
+            ts,
         )
 
     def predict_testset(self, nonocnformaty_threshold: float):
@@ -314,6 +317,8 @@ class ConfromalPredictor:
                 minimax_center_t,
                 error_bound_R,
                 error_bound_t,
+                R_set,
+                t_set,
             ) = self.predict(
                 self.test_set.pred_Rs[k],
                 self.test_set.pred_ts[k],
@@ -342,6 +347,8 @@ class ConfromalPredictor:
             data["error_bound_t"] = error_bound_t
             data["nonconformity_threshold"] = nonocnformaty_threshold
             data["nonconformity_func_name"] = self.nonconformity_func_name
+            data["R_set"] = R_set
+            data["t_set"] = t_set
             predict_data.append(data)
             # np.save(f"data/closure_test/test_result_{self.test_set.data_ids[k]}.npy", data, allow_pickle=True)
             print(
@@ -363,8 +370,10 @@ if __name__ == "__main__":
         top_hypotheses_num=10,
         init_sample_num=200,
     )
-    conformal_predictor.load_dataset("data", "linemod", [1, 2, 4, 5, 6, 8, 9], 500)
-    nonconformity_threshold = conformal_predictor.calibrate(epsilon=0.1)
 
-    test_epsilon = conformal_predictor.test_threshold(nonconformity_threshold)
-    # conformal_predictor.predict_testset(nonconformity_threshold)
+    # conformal_predictor.load_dataset("data", "linemod", [9], 200)
+
+    conformal_predictor.load_dataset("data", "linemod", [1, 2, 4, 5, 6, 8, 9], 200)
+    nonconformity_threshold = conformal_predictor.calibrate(epsilon=0.1)
+    # test_epsilon = conformal_predictor.test_threshold(nonconformity_threshold)
+    conformal_predictor.predict_testset(nonconformity_threshold)

@@ -22,8 +22,7 @@ class ClosureFoundationPose(ClosureBase):
         self.pred_Rs = pred_Rs
         self.pred_ts = pred_ts
         self.pred_scores = pred_scores
-        assert nonconformity_func_name in F.__dict__.keys()
-        self.nonconformity_func = getattr(F, nonconformity_func_name)
+        self.nonconformity_func_name = nonconformity_func_name
         self.nonconformity_threshold = nonconformity_threshold
 
         super().__init__(**kwargs)
@@ -35,8 +34,29 @@ class ClosureFoundationPose(ClosureBase):
         pred_Rs: cp.ndarray,  # (M, 3, 3)
         pred_ts: cp.ndarray,  # (M, 3)
         pred_scores: cp.ndarray,  # (M, )
-    ) -> cp.ndarray: 
-        raise NotImplementedError("nonconformity_func is not initialized")
+    ) -> cp.ndarray:  # output: (K, )
+        if "Rt" in self.nonconformity_func_name:
+            R_ratio = F.calibrated_R_ratio
+            t_ratio = F.calibrated_t_ratio
+        elif "R" in self.nonconformity_func_name:
+            R_ratio = 1
+            t_ratio = 0
+        elif "t" in self.nonconformity_func_name:
+            R_ratio = 0
+            t_ratio = 1
+        else:
+            raise ValueError("Invalid nonconformity function name")
+        return F.nonconformity_func(
+            center_Rs,
+            center_ts,
+            pred_Rs,
+            pred_ts,
+            pred_scores,
+            aggregate_method="mean" if "mean" in self.nonconformity_func_name else "max",
+            normalize=True if "normalized" in self.nonconformity_func_name else False,
+            R_ratio = R_ratio,
+            t_ratio = t_ratio,
+        )
 
 
     def check_final_poses(
