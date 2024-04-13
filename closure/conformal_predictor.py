@@ -1,9 +1,12 @@
+import datetime
+import json
 import os
 import sys
+import time
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
 from dataclasses import dataclass
-from typing import Dict, List, Tuple
+from typing import Any, Dict, List, Tuple
 import numpy as np
 import numpy.typing as npt
 import cupy as cp
@@ -12,7 +15,7 @@ from gpu_utils import get_rotation_dist, sample_convex_combination
 from closure.miniball import miniball, rotation_miniball
 import nonconformity_funcs as F
 import argparse
-from line_profiler import profile
+import pytz
 @dataclass
 class Dataset:
     data_ids: npt.NDArray[np.int_]  # (N, )
@@ -22,6 +25,7 @@ class Dataset:
     pred_ts: npt.NDArray[np.float32]  # (N, M, 3)
     pred_scores: npt.NDArray[np.float32]  # (N, M)
     object_ids: npt.NDArray[np.int_]  # (N, )
+    image_ids: npt.NDArray[np.int_]  # (N, )
     size: int
 
 
@@ -29,9 +33,10 @@ class ConfromalPredictor:
     def __init__(
         self,
         nonconformity_func_name: str,
-        top_hypotheses_num: int = 10,
-        seed=0,
-        init_sample_num=1000,
+        closure_params: Dict[str, Any],
+        init_sample_num: int,
+        top_hypotheses_num: int,
+        seed: int,
     ):
         # dataset to be initialized in load_dataset
         self.dataset: Dataset
@@ -40,7 +45,8 @@ class ConfromalPredictor:
 
         self.nonconformity_func_name = nonconformity_func_name
         self.top_hypotheses_num = top_hypotheses_num
-        self.seed = 0
+        self.seed = seed
+        self.closure_params = closure_params
         np.random.seed(seed)
         cp.random.seed(seed)
 
@@ -87,6 +93,12 @@ class ConfromalPredictor:
                     for id in object_ids
                 ]
             ),
+            image_ids=np.concatenate(
+                [
+                    np.arange(raw_dataset[id]["gt_poses"].shape[0])
+                    for id in object_ids
+                ]
+            ),
             size=self.data_size,
         )
 
@@ -101,6 +113,7 @@ class ConfromalPredictor:
             pred_ts=self.dataset.pred_ts[calibration_ids],
             pred_scores=self.dataset.pred_scores[calibration_ids],
             object_ids=self.dataset.object_ids[calibration_ids],
+            image_ids=self.dataset.image_ids[calibration_ids],
             size=calibration_set_size,
         )
 
@@ -115,6 +128,7 @@ class ConfromalPredictor:
             pred_ts=self.dataset.pred_ts[test_ids],
             pred_scores=self.dataset.pred_scores[test_ids],
             object_ids=self.dataset.object_ids[test_ids],
+            image_ids=self.dataset.object_ids[test_ids],
             size=self.data_size - calibration_set_size,
         )
 
@@ -260,7 +274,7 @@ class ConfromalPredictor:
 
         center_Rs, center_ts = sample_convex_combination(
             cp.array(pred_Rs), cp.array(pred_ts), self.init_sample_num
-        )  # (init_sample_num, 4, 4)
+        )  # (init_sample_num, 3, 3), (init_sample_num, 3)
         nonconformity_scores = self.nonconformity_func(
             center_Rs, center_ts, pred_Rs, pred_ts, pred_scores
         )
@@ -278,17 +292,7 @@ class ConfromalPredictor:
             nonconformity_threshold=nonconformity_threshold,
             init_Rs=valid_center_Rs,
             init_ts=valid_center_ts,
-            n_iterations=5,
-            n_walks=20,
-            base_ang_vel=0.5,
-            base_lin_vel=0.2,
-            decay_factor=0.5,
-            n_time_steps=15,
-            R_perturbation_scale=0.2,
-            t_perturbation_scale=0.1,
-            n_perturbations=150,
-            n_optimal_perturbations=10,
-            device_id=0,
+            **self.closure_params,
         )
         
         Rs, ts = closure.run()
@@ -312,6 +316,7 @@ class ConfromalPredictor:
         # for k in range(self.test_set.size):
         predict_data = []
         for k in range(50):
+            start_time = time.monotonic()
             (
                 minimax_center_R,
                 minimax_center_t,
@@ -325,6 +330,7 @@ class ConfromalPredictor:
                 self.test_set.pred_scores[k],
                 nonocnformaty_threshold,
             )
+            time_cost = time.monotonic() - start_time
             minimax_center_err_R = cp.asnumpy(get_rotation_dist(
                 cp.array(minimax_center_R), cp.array(self.test_set.gt_Rs[k])
             ))
@@ -333,6 +339,7 @@ class ConfromalPredictor:
             )
             data = {}
             data["object_id"] = self.test_set.object_ids[k]
+            data["image_id"] = self.test_set.image_ids[k]
             data["data_id"] = self.test_set.data_ids[k]
             data["gt_Rs"] = self.test_set.gt_Rs[k]
             data["gt_ts"] = self.test_set.gt_ts[k]
@@ -345,16 +352,28 @@ class ConfromalPredictor:
             data["minimax_center_err_t"] = minimax_center_err_t
             data["error_bound_R"] = error_bound_R
             data["error_bound_t"] = error_bound_t
-            data["nonconformity_threshold"] = nonocnformaty_threshold
-            data["nonconformity_func_name"] = self.nonconformity_func_name
             data["R_set"] = R_set
             data["t_set"] = t_set
+            data["time_cost"] = time_cost
             predict_data.append(data)
             # np.save(f"data/closure_test/test_result_{self.test_set.data_ids[k]}.npy", data, allow_pickle=True)
             print(
                 f"{self.test_set.data_ids[k]=}, {error_bound_R=:.4f}, {error_bound_t=:.4f}, {minimax_center_err_R=:.8f}, {minimax_center_err_t=:.8f}"
             )
-        np.save(f"data/closure_data/predict_results.npy", predict_data, allow_pickle=True)
+        time_zone = pytz.timezone("America/Los_Angeles")
+        
+        params = {}
+        params.update(self.closure_params)
+        params["nonconformity_threshold"] = nonocnformaty_threshold
+        params["nonconformity_func_name"] = self.nonconformity_func_name
+        params["top_hypotheses_num"] = self.top_hypotheses_num
+        params["init_sample_num"] = self.init_sample_num
+        params["seed"] = self.seed
+
+        time_stamp_str = datetime.datetime.fromtimestamp(time.time(), tz=time_zone).strftime("%Y%m%d_%H%M%S")
+        np.save(f"data/closure_data/{time_stamp_str}_predict_results.npy", predict_data, allow_pickle=True)
+        json.dump(params, open(f"data/closure_data/{time_stamp_str}_predict_params.json", "w"))
+
             
 
 
@@ -365,10 +384,25 @@ if __name__ == "__main__":
     parser.add_argument("--nonconformity_func", type=str)
     args = parser.parse_args()
 
+    closure_params = {
+        "n_iterations": 5,
+        "n_walks": 20,
+        "base_ang_vel": 0.5,
+        "base_lin_vel": 0.2,
+        "decay_factor": 0.5,
+        "n_time_steps": 15,
+        "R_perturbation_scale": 0.2,
+        "t_perturbation_scale": 0.1,
+        "n_perturbations": 150,
+        "n_optimal_perturbations": 10,
+        "device_id": 0,
+    }
     conformal_predictor = ConfromalPredictor(
         nonconformity_func_name=args.nonconformity_func,
+        closure_params=closure_params,
         top_hypotheses_num=10,
         init_sample_num=200,
+        seed=0,
     )
 
     # conformal_predictor.load_dataset("data", "linemod", [9], 200)
