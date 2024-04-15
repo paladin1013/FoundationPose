@@ -25,6 +25,8 @@ class ClosureBase:
     ):
         assert init_Rs.shape[1:] == (3, 3), f"{init_Rs.shape=}"
         assert init_ts.shape[1:] == (3,), f"{init_ts.shape=}"
+        assert init_Rs.shape[0] == init_ts.shape[0], f"{init_Rs.shape=}, {init_ts.shape=}"
+        assert init_Rs.shape[0] >= 2, f"Should include at least 2 initial points, but got {init_Rs.shape=}"
 
         self.n_iterations = n_iterations
         self.n_walks = n_walks

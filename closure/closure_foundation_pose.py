@@ -17,6 +17,8 @@ class ClosureFoundationPose(ClosureBase):
         pred_scores: cp.ndarray,  # (M, )
         nonconformity_func_name: str,
         nonconformity_threshold: float,
+        calibrated_R_ratio: float,
+        calibrated_t_ratio: float,
         **kwargs
     ):
         self.pred_Rs = pred_Rs
@@ -24,7 +26,8 @@ class ClosureFoundationPose(ClosureBase):
         self.pred_scores = pred_scores
         self.nonconformity_func_name = nonconformity_func_name
         self.nonconformity_threshold = nonconformity_threshold
-
+        self.calibrated_R_ratio = calibrated_R_ratio
+        self.calibrated_t_ratio = calibrated_t_ratio
         super().__init__(**kwargs)
 
     def nonconformity_func(
@@ -36,8 +39,8 @@ class ClosureFoundationPose(ClosureBase):
         pred_scores: cp.ndarray,  # (M, )
     ) -> cp.ndarray:  # output: (K, )
         if "Rt" in self.nonconformity_func_name:
-            R_ratio = F.calibrated_R_ratio
-            t_ratio = F.calibrated_t_ratio
+            R_ratio = self.calibrated_R_ratio
+            t_ratio = self.calibrated_t_ratio
         elif "R" in self.nonconformity_func_name:
             R_ratio = 1
             t_ratio = 0

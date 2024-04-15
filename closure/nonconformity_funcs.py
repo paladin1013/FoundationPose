@@ -2,9 +2,6 @@ import cupy as cp
 from line_profiler import profile
 from gpu_utils import get_rotation_dist
 
-calibrated_R_ratio = 1
-calibrated_t_ratio = 1
-
 def nonconformity_func(
     center_Rs: cp.ndarray,  # (K, 3, 3)
     center_ts: cp.ndarray,  # (K, 3)

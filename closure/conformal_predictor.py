@@ -3,6 +3,8 @@ import json
 import os
 import sys
 import time
+
+from data_utils import convert_npy_to_mat
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
 from dataclasses import dataclass
@@ -89,13 +91,13 @@ class ConfromalPredictor:
             ),
             object_ids=np.concatenate(
                 [
-                    np.ones(raw_dataset[id]["gt_poses"].shape[0]) * id
+                    np.ones(raw_dataset[id]["gt_poses"].shape[0], dtype=np.int32) * id
                     for id in object_ids
                 ]
             ),
             image_ids=np.concatenate(
                 [
-                    np.arange(raw_dataset[id]["gt_poses"].shape[0])
+                    np.arange(raw_dataset[id]["gt_poses"].shape[0], dtype=np.int32)
                     for id in object_ids
                 ]
             ),
@@ -128,7 +130,7 @@ class ConfromalPredictor:
             pred_ts=self.dataset.pred_ts[test_ids],
             pred_scores=self.dataset.pred_scores[test_ids],
             object_ids=self.dataset.object_ids[test_ids],
-            image_ids=self.dataset.object_ids[test_ids],
+            image_ids=self.dataset.image_ids[test_ids],
             size=self.data_size - calibration_set_size,
         )
 
@@ -141,8 +143,8 @@ class ConfromalPredictor:
         pred_scores: cp.ndarray,  # (M, )
     ) -> cp.ndarray:  # output: (K, )
         if "Rt" in self.nonconformity_func_name:
-            R_ratio = F.calibrated_R_ratio
-            t_ratio = F.calibrated_t_ratio
+            R_ratio = self.calibrated_R_ratio
+            t_ratio = self.calibrated_t_ratio
         elif "R" in self.nonconformity_func_name:
             R_ratio = 1
             t_ratio = 0
@@ -211,9 +213,9 @@ class ConfromalPredictor:
                 )[0]
             nonconformity_threshold_R = float(np.quantile(nonconformity_scores_R, 1 - epsilon))
             nonconformity_threshold_t = float(np.quantile(nonconformity_scores_t, 1 - epsilon))
-            F.calibrated_R_ratio = 1/nonconformity_threshold_R
-            F.calibrated_t_ratio = 1/nonconformity_threshold_t
-            print(f"{F.calibrated_R_ratio=}, {F.calibrated_t_ratio=}")
+            self.calibrated_R_ratio = 1/nonconformity_threshold_R
+            self.calibrated_t_ratio = 1/nonconformity_threshold_t
+            print(f"{self.calibrated_R_ratio=}, {self.calibrated_t_ratio=}")
             # Recalibrate with correct ratios
             nonconformity_scores = np.zeros(self.calibration_set.size)
             for k in range(self.calibration_set.size):
@@ -281,6 +283,10 @@ class ConfromalPredictor:
         # print(f"{cp.sum(nonconformity_scores < nonconformity_threshold)=}, {nonconformity_scores.size=}")
         valid_center_Rs = center_Rs[nonconformity_scores < nonconformity_threshold]
         valid_center_ts = center_ts[nonconformity_scores < nonconformity_threshold]
+        if valid_center_Rs.size == 0:
+            raise ValueError("No valid center poses")
+        if valid_center_Rs.size == 1:
+            raise ValueError("Only 1 valid center poses")
 
         # Then do the rigid sim algorithms
 
@@ -290,6 +296,8 @@ class ConfromalPredictor:
             pred_scores=pred_scores,
             nonconformity_func_name=self.nonconformity_func_name,
             nonconformity_threshold=nonconformity_threshold,
+            calibrated_R_ratio=self.calibrated_R_ratio,
+            calibrated_t_ratio=self.calibrated_t_ratio,
             init_Rs=valid_center_Rs,
             init_ts=valid_center_ts,
             **self.closure_params,
@@ -313,53 +321,7 @@ class ConfromalPredictor:
         )
 
     def predict_testset(self, nonocnformaty_threshold: float):
-        # for k in range(self.test_set.size):
-        predict_data = []
-        for k in range(50):
-            start_time = time.monotonic()
-            (
-                minimax_center_R,
-                minimax_center_t,
-                error_bound_R,
-                error_bound_t,
-                R_set,
-                t_set,
-            ) = self.predict(
-                self.test_set.pred_Rs[k],
-                self.test_set.pred_ts[k],
-                self.test_set.pred_scores[k],
-                nonocnformaty_threshold,
-            )
-            time_cost = time.monotonic() - start_time
-            minimax_center_err_R = cp.asnumpy(get_rotation_dist(
-                cp.array(minimax_center_R), cp.array(self.test_set.gt_Rs[k])
-            ))
-            minimax_center_err_t = np.linalg.norm(
-                minimax_center_t - self.test_set.gt_ts[k]
-            )
-            data = {}
-            data["object_id"] = self.test_set.object_ids[k]
-            data["image_id"] = self.test_set.image_ids[k]
-            data["data_id"] = self.test_set.data_ids[k]
-            data["gt_Rs"] = self.test_set.gt_Rs[k]
-            data["gt_ts"] = self.test_set.gt_ts[k]
-            data["pred_Rs"] = self.test_set.pred_Rs[k]
-            data["pred_ts"] = self.test_set.pred_ts[k]
-            data["pred_scores"] = self.test_set.pred_scores[k]
-            data["minimax_center_R"] = minimax_center_R
-            data["minimax_center_t"] = minimax_center_t
-            data["minimax_center_err_R"] = minimax_center_err_R
-            data["minimax_center_err_t"] = minimax_center_err_t
-            data["error_bound_R"] = error_bound_R
-            data["error_bound_t"] = error_bound_t
-            data["R_set"] = R_set
-            data["t_set"] = t_set
-            data["time_cost"] = time_cost
-            predict_data.append(data)
-            # np.save(f"data/closure_test/test_result_{self.test_set.data_ids[k]}.npy", data, allow_pickle=True)
-            print(
-                f"{self.test_set.data_ids[k]=}, {error_bound_R=:.4f}, {error_bound_t=:.4f}, {minimax_center_err_R=:.8f}, {minimax_center_err_t=:.8f}"
-            )
+
         time_zone = pytz.timezone("America/Los_Angeles")
         
         params = {}
@@ -369,10 +331,81 @@ class ConfromalPredictor:
         params["top_hypotheses_num"] = self.top_hypotheses_num
         params["init_sample_num"] = self.init_sample_num
         params["seed"] = self.seed
+        params["R_ratio"] = self.calibrated_R_ratio
+        params["t_ratio"] = self.calibrated_t_ratio
+        params["calibration_ids"] = self.calibration_set.data_ids.tolist()
+        params["test_ids"] = self.test_set.data_ids.tolist()
+        params["data_size"] = self.data_size
 
         time_stamp_str = datetime.datetime.fromtimestamp(time.time(), tz=time_zone).strftime("%Y%m%d_%H%M%S")
-        np.save(f"data/closure_data/{time_stamp_str}_predict_results.npy", predict_data, allow_pickle=True)
         json.dump(params, open(f"data/closure_data/{time_stamp_str}_predict_params.json", "w"))
+
+
+        # for k in range(self.test_set.size):
+        predict_data = []
+        for object_id in np.unique(self.test_set.object_ids):
+            indices = list(np.where(self.test_set.object_ids == object_id)[0])
+            for k in indices:
+                start_time = time.monotonic()
+                try:
+                    (
+                        minimax_center_R,
+                        minimax_center_t,
+                        error_bound_R,
+                        error_bound_t,
+                        R_set,
+                        t_set,
+                    ) = self.predict(
+                        self.test_set.pred_Rs[k],
+                        self.test_set.pred_ts[k],
+                        self.test_set.pred_scores[k],
+                        nonocnformaty_threshold,
+                    )
+                except ValueError:
+                    print(f"Obj {self.test_set.object_ids[k]} img {self.test_set.image_ids[k]}: No valid center poses")
+                    continue
+
+                time_cost = time.monotonic() - start_time
+                minimax_center_err_R = get_rotation_dist(
+                    minimax_center_R, self.test_set.gt_Rs[k]
+                )
+                minimax_center_err_t = np.linalg.norm(
+                    minimax_center_t - self.test_set.gt_ts[k]
+                )
+                foundation_pose_err_R = get_rotation_dist(
+                    self.test_set.pred_Rs[k, 0], self.test_set.gt_Rs[k]
+                )
+                foundation_pose_err_t = np.linalg.norm(
+                    self.test_set.pred_ts[k, 0] - self.test_set.gt_ts[k]
+                )
+                data = {}
+                data["object_id"] = self.test_set.object_ids[k]
+                data["image_id"] = self.test_set.image_ids[k]
+                data["data_id"] = self.test_set.data_ids[k]
+                data["gt_Rs"] = self.test_set.gt_Rs[k]
+                data["gt_ts"] = self.test_set.gt_ts[k]
+                data["pred_Rs"] = self.test_set.pred_Rs[k]
+                data["pred_ts"] = self.test_set.pred_ts[k]
+                data["pred_scores"] = self.test_set.pred_scores[k]
+                data["minimax_center_R"] = minimax_center_R
+                data["minimax_center_t"] = minimax_center_t
+                data["minimax_center_err_R"] = minimax_center_err_R
+                data["minimax_center_err_t"] = minimax_center_err_t
+                data["foundation_pose_err_R"] = foundation_pose_err_R
+                data["foundation_pose_err_t"] = foundation_pose_err_t
+                data["error_bound_R"] = error_bound_R
+                data["error_bound_t"] = error_bound_t
+                data["R_set"] = R_set
+                data["t_set"] = t_set
+                data["time_cost"] = time_cost
+                predict_data.append(data)
+                # np.save(f"data/closure_test/test_result_{self.test_set.data_ids[k]}.npy", data, allow_pickle=True)
+                print(
+                    f"Obj {self.test_set.object_ids[k]} img {self.test_set.image_ids[k]}: time {data['time_cost']:.3f}s, {error_bound_R=:.4f}, err_R: {minimax_center_err_R:.4f}/{foundation_pose_err_R:.4f}"
+                )
+
+            np.save(f"data/closure_data/{time_stamp_str}_object_{object_id}.npy", predict_data, allow_pickle=True)
+            # convert_npy_to_mat(f"data/closure_data/{time_stamp_str}_object_{object_id}.npy", f"data/closure_data/{time_stamp_str}_object_{object_id}.mat")
 
             
 
