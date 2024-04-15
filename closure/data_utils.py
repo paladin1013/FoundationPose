@@ -25,5 +25,5 @@ def convert_npy_to_mat(npy_path, mat_path):
 if __name__ == "__main__":
     data_dir = "data/closure_data"
     # convert_npy_to_mat(f"{data_dir}/predict_results.npy", f"{data_dir}/predict_results.mat")
-    for object_id in [8, 9]:
+    for object_id in [1, 2, 4, 5, 6, 8, 9]:
         convert_npy_to_mat(f"{data_dir}/20240412_230615_object_{object_id}.npy", f"{data_dir}/20240412_230615_object_{object_id}.mat")

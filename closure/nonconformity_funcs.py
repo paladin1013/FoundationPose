@@ -21,6 +21,8 @@ def nonconformity_func(
 
     pred_prob = pred_scores / cp.sum(pred_scores)  # (M, )
 
+    
+
     if R_ratio > 0:
         R_diffs = get_rotation_dist(
             cp.repeat(center_Rs[:, None, :, :], pred_Rs.shape[0], axis=1),
@@ -42,6 +44,8 @@ def nonconformity_func(
             raise ValueError(f"aggregate_method should be either 'max' or 'mean', got {aggregate_method}")
     else:
         R_nonconformity = cp.zeros(center_Rs.shape[0])
+
+
 
     if t_ratio > 0:
         t_diffs = cp.linalg.norm(center_ts[:, None, :] - pred_ts[None, :, :], axis=2) # (K, M)
