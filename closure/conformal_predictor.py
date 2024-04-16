@@ -31,7 +31,7 @@ class Dataset:
     size: int
 
 
-class ConfromalPredictor:
+class ConformalPredictor:
     def __init__(
         self,
         nonconformity_func_name: str,
@@ -398,6 +398,18 @@ class ConfromalPredictor:
                 data["R_set"] = R_set
                 data["t_set"] = t_set
                 data["time_cost"] = time_cost
+
+                nonconformity_score = cp.asnumpy(
+                    self.nonconformity_func(
+                        cp.array(self.test_set.gt_Rs[k][None, :, :]),
+                        cp.array(self.test_set.gt_ts[k][None, :]),
+                        cp.array(self.test_set.pred_Rs[k]),
+                        cp.array(self.test_set.pred_ts[k]),
+                        cp.array(self.test_set.pred_scores[k]),
+                    )
+                )[0]
+                data["purse_covered"] = nonconformity_score < nonocnformaty_threshold
+
                 predict_data.append(data)
                 # np.save(f"data/closure_test/test_result_{self.test_set.data_ids[k]}.npy", data, allow_pickle=True)
                 print(
@@ -430,7 +442,7 @@ if __name__ == "__main__":
         "n_optimal_perturbations": 10,
         "device_id": 0,
     }
-    conformal_predictor = ConfromalPredictor(
+    conformal_predictor = ConformalPredictor(
         nonconformity_func_name=args.nonconformity_func,
         closure_params=closure_params,
         top_hypotheses_num=10,
